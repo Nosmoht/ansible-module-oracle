@@ -11,6 +11,8 @@ options:
   name:
     description: Account name
     required: true
+  password:
+    description: Password hash as in SYS.USER$.PASSWORD
   state:
     description: Account state
     required: False
@@ -66,22 +68,25 @@ def executeSQL(con, sql):
 def getUser(con, username):
     user = None
     cur = con.cursor()
-    cur.prepare(
-        'select default_tablespace,temporary_tablespace,password,account_status from dba_users where username = :username')
-    cur.execute(None, dict(username=username))
-    row = cur.fetchone()
-    if row:
-        user = dict()
-        user['name'] = username
-        user['default_tablespace'] = row[0]
-        user['temporary_tablespace'] = row[1]
-        user['account_status'] = row[3]
-    cur.close()
+    try:
+        cur.prepare('select u.default_tablespace,u.temporary_tablespace,s.password,u.account_status from dba_users u join sys.user$ s on (s.name = u.username) where u.username = :username')
+        cur.execute(None, dict(username=username))
+        row = cur.fetchone()
+        if row:
+            user = dict()
+            user['name'] = username
+            user['default_tablespace'] = row[0]
+            user['temporary_tablespace'] = row[1]
+            user['password'] = row[2]
+            user['account_status'] = row[3]
+        cur.close()
+    except cx_Oracle.DatabaseError as e:
+        module.fail_json(msg='{sql}: {err}'.format(sql=sql,err=str(e)))
     return user
 
 
 def getCreateUserSQL(username, userpass, default_tablespace=None, temporary_tablespace=None, account_status=None):
-    sql = 'CREATE USER "{username}" IDENTIFIED BY "{userpass}"'.format(
+    sql = "CREATE USER {username} IDENTIFIED BY VALUES '{userpass}'".format(
         username=username, userpass=userpass)
     if default_tablespace:
         sql = '{sql} DEFAULT TABLESPACE {default_tablespace}'.format(
@@ -96,14 +101,14 @@ def getCreateUserSQL(username, userpass, default_tablespace=None, temporary_tabl
 
 
 def getDropUserSQL(username):
-    sql = 'DROP USER "{username}"'.format(username=username)
+    sql = 'DROP USER "{username}" CASCADE'.format(username=username)
     return sql
 
 
 def getUpdateUserSQL(username, userpass=None, default_tablespace=None, temporary_tablespace=None, account_status=None):
     sql = 'ALTER USER {username}'.format(username=username)
     if userpass:
-        sql = '{sql} IDENTIFIED BY {userpass}'.format(
+        sql = "{sql} IDENTIFIED BY VALUES '{userpass}'".format(
             sql=sql, userpass=userpass)
     if default_tablespace:
         sql = '{sql} DEFAULT TABLESPACE {default_tablespace}'.format(
@@ -114,30 +119,45 @@ def getUpdateUserSQL(username, userpass=None, default_tablespace=None, temporary
     return sql
 
 
+def mapState(state):
+    if state in ['present', 'unlocked']:
+        return 'UNLOCK'
+    return 'LOCK'
+
+def mapAccountStatus(account_status):
+    if account_status == 'OPEN':
+        return ['present', 'unlocked']
+    return 'locked'
+
 def ensure():
     changed = False
-    name = module.params['name']
+    name = module.params['name'].upper()
+    password = module.params['password']
     state = module.params['state']
     default_tablespace = module.params['default_tablespace']
     temporary_tablespace = module.params['temporary_tablespace']
     user = getUser(conn, name)
     if not user:
         if state != 'absent':
-            if state != 'locked':
-                account_status = 'UNLOCK'
-            else:
-                account_status = 'LOCK'
             sql = getCreateUserSQL(
                 username=name,
                 userpass=module.params['password'],
                 default_tablespace=default_tablespace,
                 temporary_tablespace=temporary_tablespace,
-                account_status=account_status)
+                account_status=mapState(state))
             executeSQL(conn, sql)
             changed = True
     else:
         if state == 'absent':
             sql = getDropUserSQL(username=name)
+            executeSQL(conn, sql)
+            changed = True
+        elif state not in mapAccountStatus(user.get('account_status')):
+            sql = getUpdateUserSQL(username=name, account_status=mapState(state))
+            executeSQL(conn, sql)
+            changed = True
+        if password and user.get('password') != password:
+            sql = getUpdateUserSQL(username=name, userpass=password)
             executeSQL(conn, sql)
             changed = True
         if default_tablespace and user.get('default_tablespace') != default_tablespace:
