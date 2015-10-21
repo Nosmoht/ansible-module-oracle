@@ -1,6 +1,47 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 
+DOCUMENTATION = '''
+---
+module: oracle_user
+short_description: Manage Oracle user accounts
+description:
+- Create, modify and drop Oracle user accounts
+options:
+  name:
+    description: Account name
+    required: true
+  state:
+    description: Account state
+    required: False
+    default: present
+    choices: ["present", "absent", "locked", "unlocked"]
+  oracle_host:
+    description: Hostname or IP address of Oracle DB
+    required: False
+    default: 127.0.0.1
+  oracle_port:
+    description: Listener Port
+    required: False
+    default: 1521
+  oracle_user:
+    description: Account to connect as
+    required: False
+    default: SYSTEM
+  oracle_pass:
+    description: Password to be used to authenticate
+    required: False
+    default: manager
+  oracle_service:
+    description: Service name to connect to
+    required: False
+    default: ORCL
+notes:
+- Requires cx_Oracle
+#version_added: "2.0"
+author: "Thomas Krahn (@nosmoht)"
+'''
+
 try:
     import cx_Oracle
 except ImportError:
@@ -67,12 +108,18 @@ def getUpdateUserSQL(username, userpass=None, default_tablespace=None, temporary
     if default_tablespace:
         sql = '{sql} DEFAULT TABLESPACE {default_tablespace}'.format(
             sql=sql, default_tablespace=default_tablespace)
+    if temporary_tablespace:
+        sql = '{sql} TEMPORARY TABLESPACE {temporary_tablespace}'.format(
+            sql=sql, temporary_tablespace=temporary_tablespace)
     return sql
 
 
 def ensure():
+    changed = False
     name = module.params['name']
     state = module.params['state']
+    default_tablespace = module.params['default_tablespace']
+    temporary_tablespace = module.params['temporary_tablespace']
     user = getUser(conn, name)
     if not user:
         if state != 'absent':
@@ -83,22 +130,27 @@ def ensure():
             sql = getCreateUserSQL(
                 username=name,
                 userpass=module.params['password'],
-                default_tablespace=module.params['default_tablespace'],
-                temporary_tablespace=module.params['temporary_tablespace'],
+                default_tablespace=default_tablespace,
+                temporary_tablespace=temporary_tablespace,
                 account_status=account_status)
             executeSQL(conn, sql)
-            return True, getUser(conn, username=name)
-    if user:
+            changed = True
+    else:
         if state == 'absent':
             sql = getDropUserSQL(username=name)
             executeSQL(conn, sql)
-            return True, None
-        if user.get('default_tablespace') != module.params['default_tablespace']:
+            changed = True
+        if default_tablespace and user.get('default_tablespace') != default_tablespace:
             sql = getUpdateUserSQL(
-                username=name, default_tablespace=module.params['default_tablespace'])
+                username=name, default_tablespace=default_tablespace)
             executeSQL(conn, sql)
-            return True, getUser(conn, username=name)
-    return False, user
+            changed = True
+        if temporary_tablespace and user.get('temporary_tablespace') != temporary_tablespace:
+            sql = getUpdateUserSQL(
+                username=name, temporary_tablespace=temporary_tablespace)
+            executeSQL(conn, sql)
+            changed = True
+    return changed, getUser(conn, username=name)
 
 
 def main():
@@ -122,7 +174,8 @@ def main():
     )
 
     if not oracleclient_found:
-        module.fail_json(msg='cx_Oracle not found. Needs to be installed.')
+        module.fail_json(
+            msg='cx_Oracle not found. Needs to be installed. See http://cx-oracle.sourceforge.net/')
 
     oracle_host = module.params['oracle_host']
     oracle_port = module.params['oracle_port']
