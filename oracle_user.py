@@ -203,8 +203,11 @@ def main():
     oracle_pass = module.params['oracle_pass']
     oracle_service = module.params['oracle_service']
 
-    conn = createConnection(username=oracle_user, userpass=oracle_pass,
-                            host=oracle_host, port=oracle_port, service=oracle_service)
+    try:
+        conn = createConnection(username=oracle_user, userpass=oracle_pass,
+                                host=oracle_host, port=oracle_port, service=oracle_service)
+    except cx_Oracle.DatabaseError as e:
+        module.fail_json(msg=str(e))
 
     changed, user = ensure()
     module.exit_json(changed=changed, user=user)
