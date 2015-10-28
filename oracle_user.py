@@ -81,7 +81,7 @@ def getUser(con, username):
             user['account_status'] = row[3]
         cur.close()
     except cx_Oracle.DatabaseError as e:
-        module.fail_json(msg='{sql}: {err}'.format(sql=sql,err=str(e)))
+        module.fail_json(msg='Error: {err}'.format(err=str(e)))
     return user
 
 
