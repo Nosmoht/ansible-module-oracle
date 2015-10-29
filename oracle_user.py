@@ -65,29 +65,29 @@ def executeSQL(con, sql):
     cur.close()
 
 
-def getUser(con, username):
-    user = None
+def getUser(con, name):
+    data = None
     cur = con.cursor()
     try:
-        cur.prepare('select u.default_tablespace,u.temporary_tablespace,s.password,u.account_status from dba_users u join sys.user$ s on (s.name = u.username) where u.username = :username')
-        cur.execute(None, dict(username=username))
+        cur.prepare('select u.default_tablespace,u.temporary_tablespace,s.password,u.account_status from dba_users u join sys.user$ s on (s.name = u.username) where s.name = :name')
+        cur.execute(None, dict(name=name))
         row = cur.fetchone()
         if row:
-            user = dict()
-            user['name'] = username
-            user['default_tablespace'] = row[0]
-            user['temporary_tablespace'] = row[1]
-            user['password'] = row[2]
-            user['account_status'] = row[3]
+            data = dict()
+            data['name'] = name
+            data['default_tablespace'] = row[0]
+            data['temporary_tablespace'] = row[1]
+            data['password'] = row[2]
+            data['account_status'] = row[3]
         cur.close()
+        return data
     except cx_Oracle.DatabaseError as e:
         module.fail_json(msg='Error: {err}'.format(err=str(e)))
-    return user
 
 
-def getCreateUserSQL(username, userpass, default_tablespace=None, temporary_tablespace=None, account_status=None):
-    sql = "CREATE USER {username} IDENTIFIED BY VALUES '{userpass}'".format(
-        username=username, userpass=userpass)
+def getCreateUserSQL(name, userpass, default_tablespace=None, temporary_tablespace=None, account_status=None):
+    sql = "CREATE USER {name} IDENTIFIED BY VALUES '{userpass}'".format(
+        name=name, userpass=userpass)
     if default_tablespace:
         sql = '{sql} DEFAULT TABLESPACE {default_tablespace}'.format(
             sql=sql, default_tablespace=default_tablespace)
@@ -100,13 +100,13 @@ def getCreateUserSQL(username, userpass, default_tablespace=None, temporary_tabl
     return sql
 
 
-def getDropUserSQL(username):
-    sql = 'DROP USER "{username}" CASCADE'.format(username=username)
+def getDropUserSQL(name):
+    sql = 'DROP USER "{name}" CASCADE'.format(name=name)
     return sql
 
 
-def getUpdateUserSQL(username, userpass=None, default_tablespace=None, temporary_tablespace=None, account_status=None):
-    sql = 'ALTER USER {username}'.format(username=username)
+def getUpdateUserSQL(name, userpass=None, default_tablespace=None, temporary_tablespace=None, account_status=None):
+    sql = 'ALTER USER {name}'.format(name=name)
     if userpass:
         sql = "{sql} IDENTIFIED BY VALUES '{userpass}'".format(
             sql=sql, userpass=userpass)
@@ -124,59 +124,52 @@ def mapState(state):
         return 'UNLOCK'
     return 'LOCK'
 
+
 def mapAccountStatus(account_status):
     if account_status == 'OPEN':
         return ['present', 'unlocked']
     return 'locked'
 
-def ensure():
+
+def ensure(module, conn):
     changed = False
+    sql = None
+
     name = module.params['name'].upper()
     password = module.params['password']
     state = module.params['state']
     default_tablespace = module.params['default_tablespace']
     temporary_tablespace = module.params['temporary_tablespace']
+
     user = getUser(conn, name)
+
     if not user:
         if state != 'absent':
-            sql = getCreateUserSQL(
-                username=name,
-                userpass=module.params['password'],
-                default_tablespace=default_tablespace,
-                temporary_tablespace=temporary_tablespace,
-                account_status=mapState(state))
-            executeSQL(conn, sql)
-            changed = True
+            sql = getCreateUserSQL(name=name,
+                                   userpass=password,
+                                   default_tablespace=default_tablespace,
+                                   temporary_tablespace=temporary_tablespace,
+                                   account_status=mapState(state))
     else:
         if state == 'absent':
-            sql = getDropUserSQL(username=name)
-            executeSQL(conn, sql)
-            changed = True
+            sql = getDropUserSQL(name=name)
         elif state not in mapAccountStatus(user.get('account_status')):
-            sql = getUpdateUserSQL(username=name, account_status=mapState(state))
-            executeSQL(conn, sql)
-            changed = True
+            sql = getUpdateUserSQL(name=name, account_status=mapState(state))
         if password and user.get('password') != password:
-            sql = getUpdateUserSQL(username=name, userpass=password)
-            executeSQL(conn, sql)
-            changed = True
+            sql = getUpdateUserSQL(name=name, userpass=password)
         if default_tablespace and user.get('default_tablespace') != default_tablespace:
             sql = getUpdateUserSQL(
-                username=name, default_tablespace=default_tablespace)
-            executeSQL(conn, sql)
-            changed = True
+                name=name, default_tablespace=default_tablespace)
         if temporary_tablespace and user.get('temporary_tablespace') != temporary_tablespace:
             sql = getUpdateUserSQL(
-                username=name, temporary_tablespace=temporary_tablespace)
-            executeSQL(conn, sql)
-            changed = True
-    return changed, getUser(conn, username=name)
+                name=name, temporary_tablespace=temporary_tablespace)
+    if sql:
+        executeSQL(conn, sql)
+        changed = True
+    return changed, getUser(conn, name)
 
 
 def main():
-    global module
-    global conn
-
     module = AnsibleModule(
         argument_spec=dict(
             name=dict(type='str', required=True),
@@ -207,9 +200,9 @@ def main():
         conn = createConnection(username=oracle_user, userpass=oracle_pass,
                                 host=oracle_host, port=oracle_port, service=oracle_service)
     except cx_Oracle.DatabaseError as e:
-        module.fail_json(msg=str(e))
+        module.fail_json(msg='{0}'.format(str(e)))
 
-    changed, user = ensure()
+    changed, user = ensure(module, conn)
     module.exit_json(changed=changed, user=user)
 
 # import module snippets
