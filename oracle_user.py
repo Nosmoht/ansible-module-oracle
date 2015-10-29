@@ -56,7 +56,7 @@ def createConnection(username, userpass, host, port, service):
     return cx_Oracle.connect('{username}/{userpass}@{host}:{port}/{service}'.format(username=username, userpass=userpass, host=host, port=port, service=service))
 
 
-def executeSQL(con, sql):
+def executeSQL(module, con, sql):
     cur = con.cursor()
     try:
         cur.execute(sql)
@@ -66,23 +66,36 @@ def executeSQL(con, sql):
 
 
 def getUser(con, name):
-    data = None
-    cur = con.cursor()
     try:
+        cur = con.cursor()
         cur.prepare('select u.default_tablespace,u.temporary_tablespace,s.password,u.account_status from dba_users u join sys.user$ s on (s.name = u.username) where s.name = :name')
         cur.execute(None, dict(name=name))
         row = cur.fetchone()
-        if row:
-            data = dict()
-            data['name'] = name
-            data['default_tablespace'] = row[0]
-            data['temporary_tablespace'] = row[1]
-            data['password'] = row[2]
-            data['account_status'] = row[3]
         cur.close()
-        return data
     except cx_Oracle.DatabaseError as e:
         module.fail_json(msg='Error: {err}'.format(err=str(e)))
+
+    if not row:
+        return None
+
+    data = dict()
+    data['name'] = name
+    data['default_tablespace'] = row[0]
+    data['temporary_tablespace'] = row[1]
+    data['password'] = row[2]
+    data['account_status'] = row[3]
+
+    try:
+        cur=con.cursor()
+        cur.prepare('select granted_role from dba_role_privs where grantee = :name')
+        cur.execute(None,dict(name=name))
+        rows = cur.fetchall()
+        cur.close()
+    except cx_Oracle.DatabaseError as e:
+        module.fail_json(msg='Error: {err}'.format(err=str(e)))
+
+    data['roles'] = [item[0] for item in rows]
+    return data
 
 
 def getCreateUserSQL(name, userpass, default_tablespace=None, temporary_tablespace=None, account_status=None):
@@ -119,6 +132,18 @@ def getUpdateUserSQL(name, userpass=None, default_tablespace=None, temporary_tab
     return sql
 
 
+def getGrantRoleSQL(user, role,admin=False):
+    sql = 'GRANT {role} TO {user}'.format(role=role,user=user)
+    if admin:
+        sql = '{sql} WITH ADMIN OPTION'.format(sql=sql)
+    return sql
+
+
+def getRevokeRoleSQL(user, role):
+    sql = 'REVOKE {role} FROM {user}'.format(role=role,user=user)
+    return sql
+
+
 def mapState(state):
     if state in ['present', 'unlocked']:
         return 'UNLOCK'
@@ -133,38 +158,47 @@ def mapAccountStatus(account_status):
 
 def ensure(module, conn):
     changed = False
-    sql = None
+    sql = list()
 
     name = module.params['name'].upper()
-    password = module.params['password']
-    state = module.params['state']
     default_tablespace = module.params['default_tablespace']
+    password = module.params['password']
+    roles = module.params['roles']
+    state = module.params['state']
     temporary_tablespace = module.params['temporary_tablespace']
 
     user = getUser(conn, name)
 
     if not user:
         if state != 'absent':
-            sql = getCreateUserSQL(name=name,
+            sql.append(getCreateUserSQL(name=name,
                                    userpass=password,
                                    default_tablespace=default_tablespace,
                                    temporary_tablespace=temporary_tablespace,
-                                   account_status=mapState(state))
+                                   account_status=mapState(state)))
     else:
         if state == 'absent':
-            sql = getDropUserSQL(name=name)
+            sql.append(getDropUserSQL(name=name))
         elif state not in mapAccountStatus(user.get('account_status')):
-            sql = getUpdateUserSQL(name=name, account_status=mapState(state))
+            sql.append(getUpdateUserSQL(name=name, account_status=mapState(state)))
         if password and user.get('password') != password:
-            sql = getUpdateUserSQL(name=name, userpass=password)
+            sql.append(getUpdateUserSQL(name=name, userpass=password))
         if default_tablespace and user.get('default_tablespace') != default_tablespace:
-            sql = getUpdateUserSQL(
-                name=name, default_tablespace=default_tablespace)
+            sql.append(getUpdateUserSQL(
+                name=name, default_tablespace=default_tablespace))
         if temporary_tablespace and user.get('temporary_tablespace') != temporary_tablespace:
-            sql = getUpdateUserSQL(
-                name=name, temporary_tablespace=temporary_tablespace)
-    if sql:
-        executeSQL(conn, sql)
+            sql.append(getUpdateUserSQL(
+                name=name, temporary_tablespace=temporary_tablespace))
+        role_to_grant = list(set(roles)-set(user.get('roles')))
+        for role in role_to_grant:
+            sql.append(getGrantRoleSQL(user=name,role=role))
+        role_to_revoke = list(set(user.get('roles'))-set(roles))
+        for role in role_to_revoke:
+            sql.append(getRevokeRoleSQL(user=name,role=role))
+
+    if len(sql) != 0:
+        for stmt in sql:
+            executeSQL(module, conn, stmt)
         changed = True
     return changed, getUser(conn, name)
 
@@ -176,6 +210,7 @@ def main():
             password=dict(type='str', required=False),
             default_tablespace=dict(type='str', required=False),
             temporary_tablespace=dict(type='str', required=False),
+            roles=dict(type='list', default=[]),
             state=dict(type='str', default='present', choices=[
                        'present', 'absent', 'locked', 'unlocked']),
             oracle_host=dict(type='str', default='127.0.0.1'),

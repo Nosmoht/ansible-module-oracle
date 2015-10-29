@@ -7,7 +7,9 @@ Oracle library for Ansible
 Handle Oracle stuff using Ansible with this library.
 
 Supported objects and operations:
-- Users: create, update, delete
+- Users:
+  - create, update, delete
+  - grant and revoke roles
 - Roles: create
 - System parameters: set, reset
 
@@ -38,6 +40,9 @@ oracle_user:
   password: 3D5E2F1H4D
   default_tablespace: DATA
   temporary_tablespace: TEMP
+  roles:
+  - CONNECT
+  - SELECT ANY DICTIONARY
   state: unlocked
 - name: brain
   state: absent
