@@ -36,6 +36,8 @@ __NOTE__: Password must be the hashed value from sys.user$.password.
 oracle_user:
 - name: pinky
   password: 3D5E2F1H4D
+  default_tablespace: DATA
+  temporary_tablespace: TEMP
   state: unlocked
 - name: brain
   state: absent
