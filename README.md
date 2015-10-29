@@ -34,9 +34,9 @@ __NOTE__: Password must be the hashed value from sys.user$.password.
 
 ```yaml
 oracle_user:
-  - name: pinky
-    password: 3D5E2F1H4D
-    state: unlocked
+- name: pinky
+  password: 3D5E2F1H4D
+  state: unlocked
 - name: brain
   state: absent
 ```
