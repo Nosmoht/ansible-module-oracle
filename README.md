@@ -2,26 +2,38 @@ Oracle library for Ansible
 ==========
 - [Introduction](#introduction)
 - [Requiements](#requirements)
+- [Usage](#usage)
+ - [Common](#common)
+ - [User](#user)
+ - [Role](#role)
+ - [System Parameters](#system-parameters)
+- [Author](#author)
 
 # Introduction
+
 Handle Oracle stuff using Ansible with this library.
 
 Supported objects and operations:
-- Users:
+- Users
   - create, update, delete
   - grant and revoke roles
-- Roles: create
-- System parameters: set, reset
+- Roles
+  - create and delete
+  - grant and revoke system privileges
+- System parameters
+ - set and reset
 
 # Requirements
+
 - Python [cx_Oracle] must be installed on the Ansible controller node.
 
 # Usage
 
 ## Common
+
 For all modules the following parameters must be passed.
 
-__NOTE__:  Connect as SYSDBA or using na SID is not yet implemented!
+__NOTE__:  Connect as SYSDBA or using an SID is not yet implemented!
 
 ```yaml
 oracle_host: <hostname or ip of database>
@@ -32,28 +44,30 @@ oracle_service: <service_name>
 ```
 
 ## Users
+
 __NOTE__: Password must be the hashed value from sys.user$.password.
 
 ```yaml
-oracle_user:
-- name: pinky
-  password: 3D5E2F1H4D
-  default_tablespace: DATA
-  temporary_tablespace: TEMP
-  roles:
-  - CONNECT
-  - SELECT ANY DICTIONARY
-  state: unlocked
-- name: brain
-  state: absent
+- oracle_user:
+    name: pinky
+    password: 225751978A87ED8E
+    default_tablespace: DATA
+    temporary_tablespace: TEMP
+    roles:
+    - CONNECT
+    - SELECT ANY DICTIONARY
+    state: unlocked
 ```
 
 ## Role
 
 ```yaml
-oracle_role:
-- name: APP_ROLE
-  state: present
+- oracle_role:
+    name: APP_ROLE
+    sys_privs:
+    - CREATE TABLE
+    - CREATE INDEX
+    state: present
 ```
 
 ## System parameters
@@ -61,17 +75,10 @@ oracle_role:
 Provided value is compared to column value AND display_value of v$system_parameter.
 
 ```yaml
-oracle_system_parameter:
-- name: db_create_file_dest
-  value: /u01/app/oracle/oradata/ORCL
-  state: present
-- name: sga_max_size
-  value: 128974848
-  state: present
-- name: sga_target
-  value: 128M
-- name: _some_underscore_value
-  state: absent
+- oracle_system_parameter:
+    name: db_create_file_dest
+    value: /u01/app/oracle/oradata/ORCL
+    state: present
 ```
 
 # Author
