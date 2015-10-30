@@ -81,13 +81,13 @@ def getDropRoleSQL(name):
     return sql
 
 
-def getGrantRoleSQL(name, role):
-    sql = 'GRANT {role} TO {name}'.format(role=role, name=name)
+def getGrantPrivilegeSQL(name, priv):
+    sql = 'GRANT {priv} TO {name}'.format(priv=priv, name=name)
     return sql
 
 
-def getRevokeRoleSQL(name, role):
-    sql = 'REVOKE {role} FROM {name}'.format(role=role, name=name)
+def getRevokePrivilegeSQL(name, priv):
+    sql = 'REVOKE {priv} FROM {name}'.format(priv=priv, name=name)
     return sql
 
 
@@ -98,6 +98,7 @@ def ensure(module, conn):
     name = module.params['name'].upper()
     roles = module.params['roles']
     state = module.params['state']
+    sys_privs = module.params['sys_privs']
 
     role = getRole(module, conn, name)
 
@@ -107,13 +108,25 @@ def ensure(module, conn):
         sql.append(getDropRoleSQL(name=name))
 
     if state != 'absent':
-        roles_to_grant = list(set(roles)-set(role.get('roles') if role else list()))
-        for item in roles_to_grant:
-            sql.append(getGrantRoleSQL(role=item, name=name))
+        # Roles
+        if roles is not None:
+            roles_to_grant = list(set(roles)-set(role.get('roles') if role else list()))
+            for item in roles_to_grant:
+                sql.append(getGrantPrivilegeSQL(priv=item, name=name))
 
-        roles_to_revoke = list(set(role.get('roles') if role else list())-set(roles))
-        for item in roles_to_revoke:
-            sql.append(getRevokeRoleSQL(role=item, name=name))
+            roles_to_revoke = list(set(role.get('roles') if role else list())-set(roles))
+            for item in roles_to_revoke:
+                sql.append(getRevokePrivilegeSQL(priv=item, name=name))
+
+        # System privileges
+        if sys_privs is not None:
+            privs_to_grant = list(set(sys_privs)-set(role.get('sys_privs') if sys_privs else list()))
+            for item in privs_to_grant:
+                sql.append(getGrantPrivilegeSQL(priv=item, name=name))
+
+            privs_to_revoke = list(set(role.get('sys_privs') if sys_privs else list())-set(sys_privs))
+            for item in privs_to_revoke:
+                sql.append(getRevokePrivilegeSQL(priv=item, name=name))
 
     if len(sql) > 0:
         for stmt in sql:
@@ -127,8 +140,9 @@ def main():
     module = AnsibleModule(
         argument_spec=dict(
             name=dict(type='str', required=True),
-            roles=dict(type='list', default=list()),
+            roles=dict(type='list', default=None),
             state=dict(type='str', default='present', choices=['present', 'absent']),
+            sys_privs=dict(type='list', default=None),
             oracle_host=dict(type='str', default='127.0.0.1'),
             oracle_port=dict(type='str', default='1521'),
             oracle_user=dict(type='str', default='SYSTEM'),
