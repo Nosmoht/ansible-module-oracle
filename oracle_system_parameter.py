@@ -57,8 +57,17 @@ else:
     oracleclient_found = True
 
 
-def createConnection(username, userpass, host, port, service):
-    return cx_Oracle.connect('{username}/{userpass}@{host}:{port}/{service}'.format(username=username, userpass=userpass, host=host, port=port, service=service))
+def createConnection(module, user, password, host, port, sid=None, service=None, mode=None):
+    if sid:
+        dsn = cx_Oracle.makedsn(host=host, port=port, sid=sid)
+    else:
+        dsn = cx_Oracle.makedsn(host=host, port=port, service_name=service)
+
+    try:
+        conn = cx_Oracle.connect(user=user, password=password, dsn=dsn)
+        return conn
+    except cx_Oracle.DatabaseError as e:
+        module.fail_json(msg='{dsn}: {err}'.format(dsn=dsn, err=str(e)))
 
 
 def executeSQL(sql):
@@ -70,7 +79,7 @@ def executeSQL(sql):
     cur.close()
 
 
-def getSystemParameter(name):
+def getSystemParameter(module, conn, name):
     data = None
     cur = conn.cursor()
     try:
@@ -93,7 +102,7 @@ def getAlterSystemSQL(name, value, scope, reset=False):
     return sql
 
 
-def ensure():
+def ensure(module, conn):
     changed = False
 
     name = module.params['name'].lower()
@@ -101,24 +110,21 @@ def ensure():
     scope = module.params['scope']
     state = module.params['state']
 
-    data = getSystemParameter(name)
+    data = getSystemParameter(module, conn, name)
     sql = None
     if data:
         if state == 'absent' and data.get('value') != '':
-            sql = getAlterSystemSQL(name=name, scope=scope,reset=True)
-        if value not in [data.get('value'),data.get('display_value')]:
-            sql = getAlterSystemSQL(name=name,value=value,scope=scope,reset=False)
+            sql = getAlterSystemSQL(name=name, scope=scope, reset=True)
+        if value not in [data.get('value'), data.get('display_value')]:
+            sql = getAlterSystemSQL(name=name, value=value, scope=scope, reset=False)
         if sql:
             executeSQL(sql)
             changed = True
-            data=getSystemParameter(name=name)
+            data = getSystemParameter(name=name)
     return changed, data
 
 
 def main():
-    global module
-    global conn
-
     module = AnsibleModule(
         argument_spec=dict(
             name=dict(type='str', required=True),
@@ -129,8 +135,11 @@ def main():
             oracle_port=dict(type='str', default='1521'),
             oracle_user=dict(type='str', default='SYSTEM'),
             oracle_pass=dict(type='str', default='manager'),
-            oracle_service=dict(type='str', default='ORCL'),
+            oracle_sid=dict(type='str', default=None),
+            oracle_service=dict(type='str', default=None),
         ),
+        required_one_of=[['oracle_sid', 'oracle_service']],
+        mutually_exclusive=[['oracle_sid', 'oracle_service']],
     )
 
     if not oracleclient_found:
@@ -141,15 +150,15 @@ def main():
     oracle_port = module.params['oracle_port']
     oracle_user = module.params['oracle_user']
     oracle_pass = module.params['oracle_pass']
+    oracle_sid = module.params['oracle_sid']
     oracle_service = module.params['oracle_service']
 
-    try:
-        conn = createConnection(username=oracle_user, userpass=oracle_pass,
-                                host=oracle_host, port=oracle_port, service=oracle_service)
-    except cx_Oracle.DatabaseError as e:
-        module.fail_json(msg=str(e))
+    conn = createConnection(module=module,
+                            user=oracle_user, password=oracle_pass,
+                            host=oracle_host, port=oracle_port,
+                            sid=oracle_sid, service=oracle_service)
 
-    changed, system_parameter = ensure()
+    changed, system_parameter = ensure(module, conn)
     module.exit_json(changed=changed, system_parameter=system_parameter)
 
 # import module snippets
