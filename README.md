@@ -20,6 +20,7 @@ Supported objects and operations:
 - Roles
   - create and delete
   - grant and revoke system privileges
+  - grant and revoke roles
 - System parameters
  - set and reset
 
@@ -33,7 +34,8 @@ Supported objects and operations:
 
 For all modules the following parameters must be passed.
 
-__NOTE__:  Connect as SYSDBA or using an SID is not yet implemented!
+__NOTE__:  Connect as SYSDBA is not yet implemented. Ensure to use an account
+that has the required privileges.
 
 ```yaml
 oracle_host: <hostname or ip of database>
@@ -64,6 +66,9 @@ __NOTE__: Password must be the hashed value from sys.user$.password.
 ```yaml
 - oracle_role:
     name: APP_ROLE
+    roles:
+    - CONNECT
+    - SELECT ANY DICTIONARY
     sys_privs:
     - CREATE TABLE
     - CREATE INDEX
