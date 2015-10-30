@@ -213,25 +213,25 @@ def ensure(module, conn):
                     name=name, temporary_tablespace=temporary_tablespace))
 
     if state != 'absent':
-        # Roles
-        priv_to_grant = list(
-            set(roles) - set(user.get('roles') if user else list()))
-        for priv in priv_to_grant:
-            sql.append(getGrantPrivilegeSQL(user=name, priv=priv))
-        priv_to_revoke = list(
-            set(user.get('roles') if user else list()) - set(roles))
-        for priv in priv_to_revoke:
-            sql.append(getRevokePrivilegeSQL(user=name, priv=priv))
+        if roles is not None:
+            priv_to_grant = list(
+                set(roles) - set(user.get('roles') if user else list()))
+            for priv in priv_to_grant:
+                sql.append(getGrantPrivilegeSQL(user=name, priv=priv))
+            priv_to_revoke = list(
+                set(user.get('roles') if user else list()) - set(roles))
+            for priv in priv_to_revoke:
+                sql.append(getRevokePrivilegeSQL(user=name, priv=priv))
 
         # System privileges
-        privs_to_grant = list(
-            set(sys_privs) - set(user.get('sys_privs') if user else list()))
-        for priv in privs_to_grant:
-            sql.append(getGrantPrivilegeSQL(user=name, priv=priv))
-        priv_to_revoke = list(
-            set(user.get('sys_privs') if user else list()) - set(sys_privs))
-        for priv in priv_to_revoke:
-            sql.append(getRevokePrivilegeSQL(user=name, priv=priv))
+        if sys_privs is not None:
+            privs_to_grant = list(set(sys_privs) - set(user.get('sys_privs') if user else list()))
+            for priv in privs_to_grant:
+                sql.append(getGrantPrivilegeSQL(user=name, priv=priv))
+            priv_to_revoke = list(
+                set(user.get('sys_privs') if user else list()) - set(sys_privs))
+            for priv in priv_to_revoke:
+                sql.append(getRevokePrivilegeSQL(user=name, priv=priv))
 
     if len(sql) != 0:
         for stmt in sql:
