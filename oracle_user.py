@@ -78,12 +78,11 @@ def executeSQL(module, con, sql):
 
 
 def getUser(con, name):
+    cur = con.cursor()
     try:
-        cur = con.cursor()
         cur.prepare('select u.default_tablespace,u.temporary_tablespace,s.password,u.account_status from dba_users u join sys.user$ s on (s.name = u.username) where s.name = :name')
         cur.execute(None, dict(name=name))
         row = cur.fetchone()
-        cur.close()
     except cx_Oracle.DatabaseError as e:
         module.fail_json(msg='Error: {err}'.format(err=str(e)))
 
@@ -98,15 +97,25 @@ def getUser(con, name):
     data['account_status'] = row[3]
 
     try:
-        cur = con.cursor()
-        cur.prepare('select granted_role from dba_role_privs where grantee = :name')
+        cur.prepare(
+            'select granted_role from dba_role_privs where grantee = :name')
         cur.execute(None, dict(name=name))
         rows = cur.fetchall()
-        cur.close()
+
+        data['roles'] = [item[0] for item in rows]
     except cx_Oracle.DatabaseError as e:
         module.fail_json(msg='Error: {err}'.format(err=str(e)))
 
-    data['roles'] = [item[0] for item in rows]
+    try:
+        cur.prepare('select privilege from dba_sys_privs where grantee = :name')
+        cur.execute(None, dict(name=name))
+        rows = cur.fetchall()
+
+        data['sys_privs'] = [item[0] for item in rows]
+    except cx_Oracle.DatabaseError as e:
+        module.fail_json(msg='Error: {err}'.format(err=str(e)))
+
+    cur.close()
     return data
 
 
@@ -144,15 +153,15 @@ def getUpdateUserSQL(name, userpass=None, default_tablespace=None, temporary_tab
     return sql
 
 
-def getGrantRoleSQL(user, role, admin=False):
-    sql = 'GRANT {role} TO {user}'.format(role=role, user=user)
+def getGrantPrivilegeSQL(user, priv, admin=False):
+    sql = 'GRANT {priv} TO {user}'.format(priv=priv, user=user)
     if admin:
         sql = '{sql} WITH ADMIN OPTION'.format(sql=sql)
     return sql
 
 
-def getRevokeRoleSQL(user, role):
-    sql = 'REVOKE {role} FROM {user}'.format(role=role, user=user)
+def getRevokePrivilegeSQL(user, priv):
+    sql = 'REVOKE {priv} FROM {user}'.format(priv=priv, user=user)
     return sql
 
 
@@ -177,6 +186,7 @@ def ensure(module, conn):
     roles = module.params['roles']
     state = module.params['state']
     temporary_tablespace = module.params['temporary_tablespace']
+    sys_privs = module.params['sys_privs']
 
     user = getUser(conn, name)
 
@@ -191,21 +201,37 @@ def ensure(module, conn):
             sql.append(getDropUserSQL(name=name))
         else:
             if state not in mapAccountStatus(user.get('account_status')):
-                sql.append(getUpdateUserSQL(name=name, account_status=mapState(state)))
+                sql.append(getUpdateUserSQL(
+                    name=name, account_status=mapState(state)))
             if password and user.get('password') != password:
                 sql.append(getUpdateUserSQL(name=name, userpass=password))
             if default_tablespace and user.get('default_tablespace') != default_tablespace:
-                sql.append(getUpdateUserSQL(name=name, default_tablespace=default_tablespace))
+                sql.append(getUpdateUserSQL(
+                    name=name, default_tablespace=default_tablespace))
             if temporary_tablespace and user.get('temporary_tablespace') != temporary_tablespace:
-                sql.append(getUpdateUserSQL(name=name, temporary_tablespace=temporary_tablespace))
+                sql.append(getUpdateUserSQL(
+                    name=name, temporary_tablespace=temporary_tablespace))
 
     if state != 'absent':
-        role_to_grant = list(set(roles)-set(user.get('roles') if user else list()))
-        for role in role_to_grant:
-            sql.append(getGrantRoleSQL(user=name, role=role))
-        role_to_revoke = list(set(user.get('roles') if user else list())-set(roles))
-        for role in role_to_revoke:
-            sql.append(getRevokeRoleSQL(user=name, role=role))
+        # Roles
+        priv_to_grant = list(
+            set(roles) - set(user.get('roles') if user else list()))
+        for priv in priv_to_grant:
+            sql.append(getGrantPrivilegeSQL(user=name, priv=priv))
+        priv_to_revoke = list(
+            set(user.get('roles') if user else list()) - set(roles))
+        for priv in priv_to_revoke:
+            sql.append(getRevokePrivilegeSQL(user=name, priv=priv))
+
+        # System privileges
+        privs_to_grant = list(
+            set(sys_privs) - set(user.get('sys_privs') if user else list()))
+        for priv in privs_to_grant:
+            sql.append(getGrantPrivilegeSQL(user=name, priv=priv))
+        priv_to_revoke = list(
+            set(user.get('sys_privs') if user else list()) - set(sys_privs))
+        for priv in priv_to_revoke:
+            sql.append(getRevokePrivilegeSQL(user=name, priv=priv))
 
     if len(sql) != 0:
         for stmt in sql:
@@ -221,9 +247,10 @@ def main():
             password=dict(type='str', required=False),
             default_tablespace=dict(type='str', required=False),
             temporary_tablespace=dict(type='str', required=False),
-            roles=dict(type='list', default=[]),
+            roles=dict(type='list', required=False),
             state=dict(type='str', default='present', choices=[
                        'present', 'absent', 'locked', 'unlocked']),
+            sys_privs=dict(type='list', required=False),
             oracle_host=dict(type='str', default='127.0.0.1'),
             oracle_port=dict(type='str', default='1521'),
             oracle_user=dict(type='str', default='SYSTEM'),
