@@ -12,8 +12,8 @@ def createConnection(username, userpass, host, port, service):
     return cx_Oracle.connect('{username}/{userpass}@{host}:{port}/{service}'.format(username=username, userpass=userpass, host=host, port=port, service=service))
 
 
-def executeSQL(con, sql):
-    cur = con.cursor()
+def executeSQL(module, conn, sql):
+    cur = conn.cursor()
     try:
         cur.execute(sql)
     except cx_Oracle.DatabaseError as e:
@@ -21,57 +21,78 @@ def executeSQL(con, sql):
     cur.close()
 
 
-def getRole(con, name):
-    cur = con.cursor()
+def getRole(module, conn, name):
     try:
-        cur.prepare(
-            'SELECT role, password_required FROM DBA_ROLES WHERE role = :name')
+        sql = 'SELECT role, password_required FROM DBA_ROLES WHERE role = :name'
+        cur = conn.cursor()
+        cur.prepare(sql)
         cur.execute(None, dict(name=name))
         row = cur.fetchone()
         cur.close()
-        if row:
-            return dict(name=row[0], password_required=row[1])
-        return None
     except cx_Oracle.DatabaseError as e:
-        module.fail_json(msg='Error on getRole(): {err}'.format(err=str(e)))
+        module.fail_json(msg='{sql}: {err}'.format(sql=sql,err=str(e)))
+
+    if not row:
+        return None
+
+    data = dict()
+    data['name']=row[0]
+    data['password_required']=row[1]
+
+    try:
+        sql = 'SELECT privilege FROM DBA_SYS_PRIVS WHERE grantee = :name'
+        cur = conn.cursor()
+        cur.prepare(sql)
+        cur.execute(None, dict(name=name))
+        row = cur.fetchall()
+        cur.close()
+    except cx_Oracle.DatabaseError as e:
+        module.fail_json(msg='{sql}: {err}'.format(sql=sql,err=str(e)))
+
+    data['sys_privs'] = [item[0] for item in row]
+
+    return data
 
 
 def getCreateRoleSQL(name, password_required=None):
     sql = 'CREATE ROLE {name}'.format(name=name)
-    # if password_required:
+    #if password_required:
     #    sql='{sql}'
     return sql
 
 
-def ensure():
+def getDropRoleSQL(name):
+    sql = 'DROP ROLE {name}'.format(name=name)
+    return sql
+
+
+def ensure(module, conn):
     changed = False
+    sql = None
+
     name = module.params['name'].upper()
     state = module.params['state']
 
-    role = getRole(conn, name)
-    sql = None
+    role = getRole(module, conn, name)
+
     if not role:
         if state != 'absent':
             sql = getCreateRoleSQL(name=name)
     else:
         if state == 'absent':
             sql = getDropRoleSQL(name=name)
-    if sql:
-        executeSQL(conn, sql)
-        changed = True
 
-    return changed, getRole(conn, name=name)
+    if sql:
+        executeSQL(module, conn, sql)
+        changed = True
+    return changed, getRole(module, conn, name=name)
 
 
 def main():
-    global module
-    global conn
-
     module = AnsibleModule(
         argument_spec=dict(
             name=dict(type='str', required=True),
-            state=dict(type='str', default='present',
-                       choices=['present', 'absent']),
+            state=dict(type='str', default='present', choices=['present', 'absent']),
             oracle_host=dict(type='str', default='127.0.0.1'),
             oracle_port=dict(type='str', default='1521'),
             oracle_user=dict(type='str', default='SYSTEM'),
@@ -90,13 +111,10 @@ def main():
     oracle_pass = module.params['oracle_pass']
     oracle_service = module.params['oracle_service']
 
-    try:
-        conn = createConnection(username=oracle_user, userpass=oracle_pass,
-                                host=oracle_host, port=oracle_port, service=oracle_service)
-    except cx_Oracle.DatabaseError as e:
-        module.fail_json(msg='{0}'.format(str(e)))
+    conn = createConnection(username=oracle_user, userpass=oracle_pass,
+                            host=oracle_host, port=oracle_port, service=oracle_service)
 
-    changed, role = ensure()
+    changed, role = ensure(module, conn)
     module.exit_json(changed=changed, role=role)
 
 # import module snippets
