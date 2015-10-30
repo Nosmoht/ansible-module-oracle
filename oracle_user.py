@@ -157,7 +157,6 @@ def mapAccountStatus(account_status):
 
 
 def ensure(module, conn):
-    changed = False
     sql = list()
 
     name = module.params['name'].upper()
@@ -169,38 +168,38 @@ def ensure(module, conn):
 
     user = getUser(conn, name)
 
-    if not user:
-        if state != 'absent':
-            sql.append(getCreateUserSQL(name=name,
-                                   userpass=password,
-                                   default_tablespace=default_tablespace,
-                                   temporary_tablespace=temporary_tablespace,
-                                   account_status=mapState(state)))
+    if not user and state != 'absent':
+        sql.append(getCreateUserSQL(name=name,
+                                    userpass=password,
+                                    default_tablespace=default_tablespace,
+                                    temporary_tablespace=temporary_tablespace,
+                                    account_status=mapState(state)))
     else:
         if state == 'absent':
             sql.append(getDropUserSQL(name=name))
-        elif state not in mapAccountStatus(user.get('account_status')):
-            sql.append(getUpdateUserSQL(name=name, account_status=mapState(state)))
-        if password and user.get('password') != password:
-            sql.append(getUpdateUserSQL(name=name, userpass=password))
-        if default_tablespace and user.get('default_tablespace') != default_tablespace:
-            sql.append(getUpdateUserSQL(
-                name=name, default_tablespace=default_tablespace))
-        if temporary_tablespace and user.get('temporary_tablespace') != temporary_tablespace:
-            sql.append(getUpdateUserSQL(
-                name=name, temporary_tablespace=temporary_tablespace))
-        role_to_grant = list(set(roles)-set(user.get('roles')))
+        else:
+            if state not in mapAccountStatus(user.get('account_status')):
+                sql.append(getUpdateUserSQL(name=name, account_status=mapState(state)))
+            if password and user.get('password') != password:
+                sql.append(getUpdateUserSQL(name=name, userpass=password))
+            if default_tablespace and user.get('default_tablespace') != default_tablespace:
+                sql.append(getUpdateUserSQL(name=name, default_tablespace=default_tablespace))
+            if temporary_tablespace and user.get('temporary_tablespace') != temporary_tablespace:
+                sql.append(getUpdateUserSQL(name=name, temporary_tablespace=temporary_tablespace))
+
+    if state != 'absent':
+        role_to_grant = list(set(roles)-set(user.get('roles') if user else list()))
         for role in role_to_grant:
             sql.append(getGrantRoleSQL(user=name,role=role))
-        role_to_revoke = list(set(user.get('roles'))-set(roles))
+        role_to_revoke = list(set(user.get('roles') if user else list())-set(roles))
         for role in role_to_revoke:
             sql.append(getRevokeRoleSQL(user=name,role=role))
 
     if len(sql) != 0:
         for stmt in sql:
             executeSQL(module, conn, stmt)
-        changed = True
-    return changed, getUser(conn, name)
+        return True, getUser(conn, name)
+    return False, user
 
 
 def main():
@@ -216,7 +215,7 @@ def main():
             oracle_host=dict(type='str', default='127.0.0.1'),
             oracle_port=dict(type='str', default='1521'),
             oracle_user=dict(type='str', default='SYSTEM'),
-            oracle_pass=dict(type='str', default='manager'),
+            oracle_pass=dict(type='str', default='manager', no_log=True),
             oracle_service=dict(type='str', default='ORCL'),
         ),
     )
