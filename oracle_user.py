@@ -34,10 +34,14 @@ options:
     description: Password to be used to authenticate
     required: False
     default: manager
-  oracle_service:
-    description: Service name to connect to
+  oracle_sid:
+    description: SID
     required: False
-    default: ORCL
+    default: None
+  oracle_service:
+    description: Service name
+    required: False
+    default: None
 notes:
 - Requires cx_Oracle
 #version_added: "2.0"
@@ -52,8 +56,16 @@ else:
     oracleclient_found = True
 
 
-def createConnection(username, userpass, host, port, service):
-    return cx_Oracle.connect('{username}/{userpass}@{host}:{port}/{service}'.format(username=username, userpass=userpass, host=host, port=port, service=service))
+def createConnection(module, user, password, host, port, sid=None, service=None, mode=None):
+    if sid:
+        dsn = cx_Oracle.makedsn(host=host, port=port, sid=sid)
+    else:
+        dsn = cx_Oracle.makedsn(host=host, port=port, service_name=service)
+    try:
+        conn = cx_Oracle.connect(user=user, password=password, dsn=dsn)
+        return conn
+    except cx_Oracle.DatabaseError as e:
+        module.fail_json(msg='{dsn}: {err}'.format(dsn=dsn, err=str(e)))
 
 
 def executeSQL(module, con, sql):
@@ -86,9 +98,9 @@ def getUser(con, name):
     data['account_status'] = row[3]
 
     try:
-        cur=con.cursor()
+        cur = con.cursor()
         cur.prepare('select granted_role from dba_role_privs where grantee = :name')
-        cur.execute(None,dict(name=name))
+        cur.execute(None, dict(name=name))
         rows = cur.fetchall()
         cur.close()
     except cx_Oracle.DatabaseError as e:
@@ -132,15 +144,15 @@ def getUpdateUserSQL(name, userpass=None, default_tablespace=None, temporary_tab
     return sql
 
 
-def getGrantRoleSQL(user, role,admin=False):
-    sql = 'GRANT {role} TO {user}'.format(role=role,user=user)
+def getGrantRoleSQL(user, role, admin=False):
+    sql = 'GRANT {role} TO {user}'.format(role=role, user=user)
     if admin:
         sql = '{sql} WITH ADMIN OPTION'.format(sql=sql)
     return sql
 
 
 def getRevokeRoleSQL(user, role):
-    sql = 'REVOKE {role} FROM {user}'.format(role=role,user=user)
+    sql = 'REVOKE {role} FROM {user}'.format(role=role, user=user)
     return sql
 
 
@@ -190,10 +202,10 @@ def ensure(module, conn):
     if state != 'absent':
         role_to_grant = list(set(roles)-set(user.get('roles') if user else list()))
         for role in role_to_grant:
-            sql.append(getGrantRoleSQL(user=name,role=role))
+            sql.append(getGrantRoleSQL(user=name, role=role))
         role_to_revoke = list(set(user.get('roles') if user else list())-set(roles))
         for role in role_to_revoke:
-            sql.append(getRevokeRoleSQL(user=name,role=role))
+            sql.append(getRevokeRoleSQL(user=name, role=role))
 
     if len(sql) != 0:
         for stmt in sql:
@@ -215,9 +227,12 @@ def main():
             oracle_host=dict(type='str', default='127.0.0.1'),
             oracle_port=dict(type='str', default='1521'),
             oracle_user=dict(type='str', default='SYSTEM'),
-            oracle_pass=dict(type='str', default='manager', no_log=True),
-            oracle_service=dict(type='str', default='ORCL'),
+            oracle_pass=dict(type='str', default='manager'),
+            oracle_sid=dict(type='str', default=None),
+            oracle_service=dict(type='str', default=None),
         ),
+        required_one_of=[['oracle_sid', 'oracle_service']],
+        mutually_exclusive=[['oracle_sid', 'oracle_service']],
     )
 
     if not oracleclient_found:
@@ -228,13 +243,13 @@ def main():
     oracle_port = module.params['oracle_port']
     oracle_user = module.params['oracle_user']
     oracle_pass = module.params['oracle_pass']
+    oracle_sid = module.params['oracle_sid']
     oracle_service = module.params['oracle_service']
 
-    try:
-        conn = createConnection(username=oracle_user, userpass=oracle_pass,
-                                host=oracle_host, port=oracle_port, service=oracle_service)
-    except cx_Oracle.DatabaseError as e:
-        module.fail_json(msg='{0}'.format(str(e)))
+    conn = createConnection(module=module,
+                            user=oracle_user, password=oracle_pass,
+                            host=oracle_host, port=oracle_port,
+                            sid=oracle_sid, service=oracle_service)
 
     changed, user = ensure(module, conn)
     module.exit_json(changed=changed, user=user)
