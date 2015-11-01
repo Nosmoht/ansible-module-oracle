@@ -39,7 +39,7 @@ Supported objects and operations:
 ## Common
 
 For all modules the following parameters must be passed. On of either __oracle_sid__ and __oralce_service__
-must be passed but not both.
+must be passed but not both. __oracle_pass__ can be omitted if defined in environment variable __ORACLE_PASS__.
 
 __NOTE__:  Connect as SYSDBA is not yet implemented. Ensure to use an account
 that has the required privileges.
@@ -79,17 +79,27 @@ oracle_service: <service_name>
     - CREATE TABLE
     - CREATE INDEX
     state: present
+    oracle_host: db.example.com
+    oracle_port: 1521
+    oracle_user: system
+    oracle_pass: manager
+    oracle_sid: ORCL
 ```
 
 ## System parameters
 
-Provided value is compared to column value AND display_value of v$system_parameter.
+Provided value is compared to column __value__ AND __display_value__ of v$system_parameter.
 
 ```yaml
 - oracle_system_parameter:
     name: db_create_file_dest
     value: /u01/app/oracle/oradata/ORCL
     state: present
+    oracle_host: db.example.com
+    oracle_port: 1521
+    oracle_user: system
+    oracle_pass: manager
+    oracle_sid: ORCL
 ```
 
 ## Users
@@ -106,6 +116,11 @@ __NOTE__: Password must be the hashed value from sys.user$.password.
     - CONNECT
     - SELECT ANY DICTIONARY
     state: unlocked
+    oracle_host: db.example.com
+    oracle_port: 1521
+    oracle_user: system
+    oracle_pass: manager
+    oracle_sid: ORCL
 ```
 
 # Author

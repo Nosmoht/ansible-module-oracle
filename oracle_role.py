@@ -45,7 +45,8 @@ options:
     default: SYSTEM
   oracle_pass:
     description:
-    - Password to be used to authenticate
+    - Password to be used to authenticate.
+    - Can be omitted if environment variable ORACLE_PASS is set.
     required: False
     default: manager
   oracle_sid:
@@ -149,8 +150,8 @@ def getRole(module, conn, name):
 
 def getCreateRoleSQL(name, password_required=None):
     sql = 'CREATE ROLE {name}'.format(name=name)
-#   if password_required:
-#       sql='{sql}'
+    #   if password_required:
+    #       sql='{sql}'
     return sql
 
 
@@ -188,21 +189,21 @@ def ensure(module, conn):
     if state != 'absent':
         # Roles
         if roles is not None:
-            roles_to_grant = list(set(roles)-set(role.get('roles') if role else list()))
+            roles_to_grant = list(set(roles) - set(role.get('roles') if role else list()))
             for item in roles_to_grant:
                 sql.append(getGrantPrivilegeSQL(priv=item, name=name))
 
-            roles_to_revoke = list(set(role.get('roles') if role else list())-set(roles))
+            roles_to_revoke = list(set(role.get('roles') if role else list()) - set(roles))
             for item in roles_to_revoke:
                 sql.append(getRevokePrivilegeSQL(priv=item, name=name))
 
         # System privileges
         if sys_privs is not None:
-            privs_to_grant = list(set(sys_privs)-set(role.get('sys_privs') if sys_privs else list()))
+            privs_to_grant = list(set(sys_privs) - set(role.get('sys_privs') if sys_privs else list()))
             for item in privs_to_grant:
                 sql.append(getGrantPrivilegeSQL(priv=item, name=name))
 
-            privs_to_revoke = list(set(role.get('sys_privs') if sys_privs else list())-set(sys_privs))
+            privs_to_revoke = list(set(role.get('sys_privs') if sys_privs else list()) - set(sys_privs))
             for item in privs_to_revoke:
                 sql.append(getRevokePrivilegeSQL(priv=item, name=name))
 
@@ -224,7 +225,7 @@ def main():
             oracle_host=dict(type='str', default='127.0.0.1'),
             oracle_port=dict(type='str', default='1521'),
             oracle_user=dict(type='str', default='SYSTEM'),
-            oracle_pass=dict(type='str', default='manager'),
+            oracle_pass=dict(type='str', default=None, no_log=True),
             oracle_sid=dict(type='str', default=None),
             oracle_service=dict(type='str', default=None),
         ),
@@ -239,7 +240,7 @@ def main():
     oracle_host = module.params['oracle_host']
     oracle_port = module.params['oracle_port']
     oracle_user = module.params['oracle_user']
-    oracle_pass = module.params['oracle_pass']
+    oracle_pass = module.params['oracle_pass'] or os.environ['ORACLE_PASS']
     oracle_sid = module.params['oracle_sid']
     oracle_service = module.params['oracle_service']
 

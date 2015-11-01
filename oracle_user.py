@@ -115,7 +115,8 @@ def executeSQL(module, con, sql):
 def getUser(con, name):
     cur = con.cursor()
     try:
-        cur.prepare('select u.default_tablespace,u.temporary_tablespace,s.password,u.account_status from dba_users u join sys.user$ s on (s.name = u.username) where s.name = :name')
+        cur.prepare(
+            'select u.default_tablespace,u.temporary_tablespace,s.password,u.account_status from dba_users u join sys.user$ s on (s.name = u.username) where s.name = :name')
         cur.execute(None, dict(name=name))
         row = cur.fetchone()
     except cx_Oracle.DatabaseError as e:
@@ -283,12 +284,12 @@ def main():
             temporary_tablespace=dict(type='str', required=False),
             roles=dict(type='list', required=False),
             state=dict(type='str', default='present', choices=[
-                       'present', 'absent', 'locked', 'unlocked']),
+                'present', 'absent', 'locked', 'unlocked']),
             sys_privs=dict(type='list', required=False),
             oracle_host=dict(type='str', default='127.0.0.1'),
             oracle_port=dict(type='str', default='1521'),
             oracle_user=dict(type='str', default='SYSTEM'),
-            oracle_pass=dict(type='str', default='manager'),
+            oracle_pass=dict(type='str', default=None, no_log=True),
             oracle_sid=dict(type='str', default=None),
             oracle_service=dict(type='str', default=None),
         ),
@@ -303,7 +304,7 @@ def main():
     oracle_host = module.params['oracle_host']
     oracle_port = module.params['oracle_port']
     oracle_user = module.params['oracle_user']
-    oracle_pass = module.params['oracle_pass']
+    oracle_pass = module.params['oracle_pass'] or os.environ['ORACLE_PASS']
     oracle_sid = module.params['oracle_sid']
     oracle_service = module.params['oracle_service']
 
