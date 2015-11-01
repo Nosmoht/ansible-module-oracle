@@ -9,44 +9,70 @@ description:
 - Modify Oracle system parameters
 options:
   name:
-    description: Parameter name
+    description:
+    - Parameter name
     required: true
   value:
-    description: Parameter value
+    description:
+    - Parameter value
     required: true
   scope:
     description:
+    - Parameter scope
     default: both
     choices: ["both", "memory", "spfile"]
   state:
-    description: Parameter state
+    description:
+    - Parameter state
     required: False
     default: present
     choices: ["present", "absent"]
   oracle_host:
-    description: Hostname or IP address of Oracle DB
+    description:
+    - Hostname or IP address of Oracle DB
     required: False
     default: 127.0.0.1
   oracle_port:
-    description: Listener Port
+    description:
+    - Listener Port
     required: False
     default: 1521
   oracle_user:
-    description: Account to connect as
+    description:
+    - Account to connect as
     required: False
     default: SYSTEM
   oracle_pass:
-    description: Password to be used to authenticate
+    description:
+    - Password to be used to authenticate
     required: False
     default: manager
-  oracle_service:
-    description: Service name to connect to
+  oracle_sid:
+    description:
+    - SID to connect to
     required: False
-    default: ORCL
+    default: None
+  oracle_service:
+    description:
+    - Service name to connect to
+    required: False
+    default: None
 notes:
 - Requires cx_Oracle
 #version_added: "2.0"
 author: "Thomas Krahn (@nosmoht)"
+'''
+
+EXAMPLES = '''
+- name: Ensure Oracle system parameter
+  oracle_system_privilege:
+    name: db_create_file_dest
+    value: +DATA
+    oracle_host: db.example.com
+    oracle_port: 1523
+    oracle_user: system
+    oracle_pass: manager
+    oracle_sid: ORCL
 '''
 
 try:
@@ -87,7 +113,7 @@ def getSystemParameter(module, conn, name):
         cur.execute(None, dict(name=name))
         row = cur.fetchone()
         if row:
-            data = dict(name=row[0],value=row[1],display_value=row[2])
+            data = dict(name=row[0], value=row[1], display_value=row[2])
         cur.close()
         return data
     except cx_Oracle.DatabaseError as e:
@@ -96,9 +122,9 @@ def getSystemParameter(module, conn, name):
 
 def getAlterSystemSQL(name, value, scope, reset=False):
     if reset:
-        sql = "ALTER SYSTEM RESET '{name}' SCOPE={scope}".format(name=name,scope=scope)
+        sql = "ALTER SYSTEM RESET '{name}' SCOPE={scope}".format(name=name, scope=scope)
     else:
-        sql = "ALTER SYSTEM SET {name}='{value}' SCOPE={scope}".format(name=name,value=value,scope=scope)
+        sql = "ALTER SYSTEM SET {name}='{value}' SCOPE={scope}".format(name=name, value=value, scope=scope)
     return sql
 
 
