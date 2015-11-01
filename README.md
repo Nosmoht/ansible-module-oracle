@@ -26,7 +26,9 @@ Supported objects and operations:
   - set and reset
 - Users
   - create, update, delete
+  - lock and unlock
   - grant and revoke roles
+  - grant and revoke system privileges
 
 # Requirements
 
