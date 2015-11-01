@@ -4,6 +4,7 @@ Oracle library for Ansible
 - [Requiements](#requirements)
 - [Usage](#usage)
  - [Common](#common)
+ - [Directory](#directory)
  - [User](#user)
  - [Role](#role)
  - [System Parameters](#system-parameters)
@@ -14,15 +15,18 @@ Oracle library for Ansible
 Handle Oracle stuff using Ansible with this library.
 
 Supported objects and operations:
-- Users
-  - create, update, delete
-  - grant and revoke roles
+- Directory
+  - create and delete
+  - modify path
 - Roles
   - create and delete
   - grant and revoke system privileges
   - grant and revoke roles
 - System parameters
- - set and reset
+  - set and reset
+- Users
+  - create, update, delete
+  - grant and revoke roles
 
 # Requirements
 
@@ -32,7 +36,8 @@ Supported objects and operations:
 
 ## Common
 
-For all modules the following parameters must be passed.
+For all modules the following parameters must be passed. On of either __oracle_sid__ and __oralce_service__
+must be passed but not both.
 
 __NOTE__:  Connect as SYSDBA is not yet implemented. Ensure to use an account
 that has the required privileges.
@@ -42,23 +47,22 @@ oracle_host: <hostname or ip of database>
 oracle_port: <port>
 oracle_user: <username>
 oracle_pass: <password>
+oracle_sid: <SID>
 oracle_service: <service_name>
 ```
 
-## Users
-
-__NOTE__: Password must be the hashed value from sys.user$.password.
+## Directory
 
 ```yaml
-- oracle_user:
-    name: pinky
-    password: 225751978A87ED8E
-    default_tablespace: DATA
-    temporary_tablespace: TEMP
-    roles:
-    - CONNECT
-    - SELECT ANY DICTIONARY
-    state: unlocked
+- name: Ensure directory
+  oracle_directory:
+    name: DATA_PUMP_DIR
+    path: /u01/app/oracle/admin/ORCL/dpdump
+    oracle_host: db.example.com
+    oracle_port: 1521
+    oracle_user: system
+    oracle_pass: manager
+    oracle_sid: ORCL
 ```
 
 ## Role
@@ -84,6 +88,22 @@ Provided value is compared to column value AND display_value of v$system_paramet
     name: db_create_file_dest
     value: /u01/app/oracle/oradata/ORCL
     state: present
+```
+
+## Users
+
+__NOTE__: Password must be the hashed value from sys.user$.password.
+
+```yaml
+- oracle_user:
+    name: pinky
+    password: 225751978A87ED8E
+    default_tablespace: DATA
+    temporary_tablespace: TEMP
+    roles:
+    - CONNECT
+    - SELECT ANY DICTIONARY
+    state: unlocked
 ```
 
 # Author
