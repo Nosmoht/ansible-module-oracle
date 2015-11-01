@@ -6,46 +6,81 @@ DOCUMENTATION = '''
 module: oracle_user
 short_description: Manage Oracle user accounts
 description:
-- Create, modify and drop Oracle user accounts
+- Create, update and delete Oracle user accounts.
+- Grant and revoke system privileges and roles.
+- Lock or unlock accounts.
 options:
   name:
-    description: Account name
+    description:
+    - Account name
     required: true
   password:
-    description: Password hash as in SYS.USER$.PASSWORD
+    description:
+    - Password hash as in SYS.USER$.PASSWORD
+  roles:
+    description:
+    - Roles granted to the user.
+    - If an empty list ([]) is passed all roles will be revoked. If None roles will not be ensured.
+    required: false
+    default: None
+  sys_privs:
+    description:
+    - System privileges granted to the user.
+    - If an empty list ([]) is passed all system privileges will be revoked. If None system privileges will not be ensured.
   state:
-    description: Account state
+    description:
+    - Account state
     required: False
     default: present
     choices: ["present", "absent", "locked", "unlocked"]
   oracle_host:
-    description: Hostname or IP address of Oracle DB
+    description:
+    - Hostname or IP address of Oracle DB
     required: False
     default: 127.0.0.1
   oracle_port:
-    description: Listener Port
+    description:
+    - Listener Port
     required: False
     default: 1521
   oracle_user:
-    description: Account to connect as
+    description:
+    - Account to connect as
     required: False
     default: SYSTEM
   oracle_pass:
-    description: Password to be used to authenticate
+    description:
+    - Password to be used to authenticate
     required: False
     default: manager
   oracle_sid:
-    description: SID
+    description:
+    - Oracle SID to use for connection
     required: False
     default: None
   oracle_service:
-    description: Service name
+    description:
+    - Oracle Service name to use for connection
     required: False
     default: None
 notes:
 - Requires cx_Oracle
 #version_added: "2.0"
 author: "Thomas Krahn (@nosmoht)"
+'''
+
+EXAMPLES = '''
+- name: Ensure Oracle user accounts
+  oracle_user:
+    name: pinky
+    default_tablespace: DATA
+    temporary_tablespace: TEMP
+    password: 975C9ABC52D157E5
+    roles:
+    - DBA
+    sys_privs:
+    - CONNECT
+    - UNLIMITED TABLESPACE
 '''
 
 try:
@@ -101,7 +136,6 @@ def getUser(con, name):
             'select granted_role from dba_role_privs where grantee = :name')
         cur.execute(None, dict(name=name))
         rows = cur.fetchall()
-
         data['roles'] = [item[0] for item in rows]
     except cx_Oracle.DatabaseError as e:
         module.fail_json(msg='Error: {err}'.format(err=str(e)))
