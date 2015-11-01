@@ -1,4 +1,82 @@
 #!/usr/bin/python
+# -*- coding: utf-8 -*-
+
+DOCUMENTATION = '''
+---
+module: oracle_role
+short_description: Manage Oracle roles
+description:
+- Modify Oracle system parameters
+options:
+  name:
+    description:
+    - Role name
+    required: true
+  roles:
+    description:
+      - Roles granted to the role.
+      - If an empty list ([]) is specified all granted roles will be revoked!
+    required: false
+    default: None
+  sys_privs:
+    description:
+      - List of system privileges granted to the role
+      - If an empty list ([]) is specified all granted system privileges will be revoked
+  state:
+    description:
+    - Parameter state
+    required: False
+    default: present
+    choices: ["present", "absent"]
+  oracle_host:
+    description:
+    - Hostname or IP address of Oracle DB
+    required: False
+    default: 127.0.0.1
+  oracle_port:
+    description:
+    - Listener Port
+    required: False
+    default: 1521
+  oracle_user:
+    description:
+    - Account to connect as
+    required: False
+    default: SYSTEM
+  oracle_pass:
+    description:
+    - Password to be used to authenticate
+    required: False
+    default: manager
+  oracle_sid:
+    description:
+    - SID to connect to
+    required: False
+    default: None
+  oracle_service:
+    description:
+    - Service name to connect to
+    required: False
+    default: None
+notes:
+- Requires cx_Oracle
+author: "Thomas Krahn (@nosmoht)"
+'''
+
+EXAMPLES = '''
+- name: Ensure Oracle role
+  oracle_role:
+    name: APP_ROLE
+    roles:
+    - PLUSTRACE
+    sys_privs:
+    - CONNECT
+    oracle_host: db.example.com
+    oracle_port: 1523
+    oracle_user: system
+    oracle_pass: manager
+    oracle_sid: ORCL
+'''
 
 try:
     import cx_Oracle
