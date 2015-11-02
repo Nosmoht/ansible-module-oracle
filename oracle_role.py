@@ -14,14 +14,16 @@ options:
     required: true
   roles:
     description:
-      - Roles granted to the role.
-      - If an empty list ([]) is specified all granted roles will be revoked!
+      - List of roles granted to the role.
+      - If an empty list ([]) is specified all granted roles will be revoked.
+      - All items will be converted using uppercase.
     required: false
     default: None
   sys_privs:
     description:
-      - List of system privileges granted to the role
-      - If an empty list ([]) is specified all granted system privileges will be revoked
+      - List of system privileges granted to the role.
+      - If an empty list ([]) is specified all granted system privileges will be revoked.
+      - All items will be converted using uppercase.
   state:
     description:
     - Parameter state
@@ -131,18 +133,20 @@ def getRole(module, conn, name):
         cur.prepare(sql)
         cur.execute(None, dict(name=name))
         row = cur.fetchall()
-        data['sys_privs'] = [item[0] for item in row]
     except cx_Oracle.DatabaseError as e:
         module.fail_json(msg='{sql}: {err}'.format(sql=sql, err=str(e)))
+
+    data['sys_privs'] = [item[0] for item in row]
 
     try:
         sql = 'SELECT granted_role FROM DBA_ROLE_PRIVS WHERE grantee = :name'
         cur.prepare(sql)
         cur.execute(None, dict(name=name))
         row = cur.fetchall()
-        data['roles'] = [item[0] for item in row]
     except cx_Oracle.DatabaseError as e:
         module.fail_json(msg='{sql}: {err}'.format(sql=sql, err=str(e)))
+
+    data['roles'] = [item[0] for item in row]
 
     cur.close()
     return data
@@ -175,9 +179,9 @@ def ensure(module, conn):
     sql = list()
 
     name = module.params['name'].upper()
-    roles = module.params['roles']
+    roles = [item.upper() for item in module.params['roles']]
     state = module.params['state']
-    sys_privs = module.params['sys_privs']
+    sys_privs = [item.upper() for item in module.params['sys_privs']]
 
     role = getRole(module, conn, name)
 
