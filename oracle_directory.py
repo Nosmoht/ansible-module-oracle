@@ -126,7 +126,7 @@ def getDropDirectorySQL(name):
 
 
 def ensure(module, conn):
-    name = module.params['name']
+    name = module.params['name'].upper()
     path = module.params['path']
     state = module.params['state']
     sql = list()
