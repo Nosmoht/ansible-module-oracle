@@ -19,14 +19,17 @@ options:
     - Password hash as in SYS.USER$.PASSWORD
   roles:
     description:
-    - Roles granted to the user.
+    - List of roles granted to the user.
     - If an empty list ([]) is passed all roles will be revoked. If None roles will not be ensured.
+    - All items will be converted using uppercase.
     required: false
     default: None
   sys_privs:
     description:
-    - System privileges granted to the user.
+    - List of system privileges granted to the user.
     - If an empty list ([]) is passed all system privileges will be revoked. If None system privileges will not be ensured.
+    - All items will be converted using uppercase.
+
   state:
     description:
     - Account state
@@ -216,12 +219,12 @@ def ensure(module, conn):
     sql = list()
 
     name = module.params['name'].upper()
-    default_tablespace = module.params['default_tablespace']
+    default_tablespace = module.params['default_tablespace'].upper()
     password = module.params['password']
-    roles = module.params['roles']
+    roles = [item.upper() for item in module.params['roles']]
     state = module.params['state']
-    temporary_tablespace = module.params['temporary_tablespace']
-    sys_privs = module.params['sys_privs']
+    temporary_tablespace = module.params['temporary_tablespace'].upper()
+    sys_privs = [item.upper() for item in module.params['sys_privs']]
 
     user = getUser(conn, name)
 
