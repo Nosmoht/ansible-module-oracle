@@ -219,11 +219,12 @@ def ensure(module, conn):
     sql = list()
 
     name = module.params['name'].upper()
-    default_tablespace = module.params['default_tablespace'].upper()
+    default_tablespace = module.params['default_tablespace'].upper() if module.params['default_tablespace'] else None
     password = module.params['password']
     roles = [item.upper() for item in module.params['roles']]
     state = module.params['state']
-    temporary_tablespace = module.params['temporary_tablespace'].upper()
+    temporary_tablespace = module.params['temporary_tablespace'].upper() if module.params[
+        'temporary_tablespace'] else None
     sys_privs = [item.upper() for item in module.params['sys_privs']]
 
     user = getUser(conn, name)
