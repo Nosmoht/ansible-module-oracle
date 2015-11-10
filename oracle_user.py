@@ -221,7 +221,8 @@ def ensure(module, conn):
     sql = list()
 
     name = module.params['name'].upper()
-    default_tablespace = module.params['default_tablespace'].upper() if module.params['default_tablespace'] else None
+    default_tablespace = module.params['default_tablespace'].upper() if module.params[
+        'default_tablespace'] else None
     password = module.params['password']
     if module.params['roles']:
         roles = [item.upper() for item in module.params['roles']]
@@ -272,7 +273,8 @@ def ensure(module, conn):
 
         # System privileges
         if sys_privs is not None:
-            privs_to_grant = list(set(sys_privs) - set(user.get('sys_privs') if user else list()))
+            privs_to_grant = list(
+                set(sys_privs) - set(user.get('sys_privs') if user else list()))
             for priv in privs_to_grant:
                 sql.append(getGrantPrivilegeSQL(user=name, priv=priv))
             priv_to_revoke = list(
@@ -281,6 +283,8 @@ def ensure(module, conn):
                 sql.append(getRevokePrivilegeSQL(user=name, priv=priv))
 
     if len(sql) != 0:
+        if module.check_mode:
+            module.exit_json(changed=True, msg="\n".join(sql), user=user)
         for stmt in sql:
             executeSQL(module, conn, stmt)
         return True, getUser(conn, name)
@@ -307,6 +311,7 @@ def main():
         ),
         required_one_of=[['oracle_sid', 'oracle_service']],
         mutually_exclusive=[['oracle_sid', 'oracle_service']],
+        supports_check_mode=True,
     )
 
     if not oracleclient_found:
