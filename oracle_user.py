@@ -187,6 +187,9 @@ def getUpdateUserSQL(name, userpass=None, default_tablespace=None, temporary_tab
     if temporary_tablespace:
         sql = '{sql} TEMPORARY TABLESPACE {temporary_tablespace}'.format(
             sql=sql, temporary_tablespace=temporary_tablespace)
+    if account_status:
+        sql = '{sql} ACCOUNT {account_state}'.format(
+            sql=sql, account_state=account_status)
     return sql
 
 
