@@ -224,14 +224,14 @@ def ensure(module, conn):
     default_tablespace = module.params['default_tablespace'].upper() if module.params[
         'default_tablespace'] else None
     password = module.params['password']
-    if module.params['roles']:
+    if module.params['roles'] is not None:
         roles = [item.upper() for item in module.params['roles']]
     else:
         roles = None
     state = module.params['state']
     temporary_tablespace = module.params['temporary_tablespace'].upper() if module.params[
         'temporary_tablespace'] else None
-    if module.params['sys_privs']:
+    if module.params['sys_privs'] is not None:
         sys_privs = [item.upper() for item in module.params['sys_privs']]
     else:
         sys_privs = None

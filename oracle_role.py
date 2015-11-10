@@ -179,12 +179,12 @@ def ensure(module, conn):
     sql = list()
 
     name = module.params['name'].upper()
-    if module.params['roles']:
+    if module.params['roles'] is not None:
         roles = [item.upper() for item in module.params['roles']]
     else:
         roles = None
     state = module.params['state']
-    if module.params['sys_privs']:
+    if module.params['sys_privs'] is not None:
         sys_privs = [item.upper() for item in module.params['sys_privs']]
     else:
         sys_privs = None
