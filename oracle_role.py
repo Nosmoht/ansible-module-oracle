@@ -179,9 +179,15 @@ def ensure(module, conn):
     sql = list()
 
     name = module.params['name'].upper()
-    roles = [item.upper() for item in module.params['roles']]
+    if module.params['roles']:
+        roles = [item.upper() for item in module.params['roles']]
+    else:
+        roles = None
     state = module.params['state']
-    sys_privs = [item.upper() for item in module.params['sys_privs']]
+    if module.params['sys_privs']:
+        sys_privs = [item.upper() for item in module.params['sys_privs']]
+    else:
+        sys_privs = None
 
     role = getRole(module, conn, name)
 
@@ -203,11 +209,11 @@ def ensure(module, conn):
 
         # System privileges
         if sys_privs is not None:
-            privs_to_grant = list(set(sys_privs) - set(role.get('sys_privs') if sys_privs else list()))
+            privs_to_grant = list(set(sys_privs) - set(role.get('sys_privs') if role else list()))
             for item in privs_to_grant:
                 sql.append(getGrantPrivilegeSQL(priv=item, name=name))
 
-            privs_to_revoke = list(set(role.get('sys_privs') if sys_privs else list()) - set(sys_privs))
+            privs_to_revoke = list(set(role.get('sys_privs') if role else list()) - set(sys_privs))
             for item in privs_to_revoke:
                 sql.append(getRevokePrivilegeSQL(priv=item, name=name))
 
