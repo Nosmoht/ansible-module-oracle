@@ -29,7 +29,6 @@ options:
     - List of system privileges granted to the user.
     - If an empty list ([]) is passed all system privileges will be revoked. If None system privileges will not be ensured.
     - All items will be converted using uppercase.
-
   state:
     description:
     - Account state
@@ -221,11 +220,17 @@ def ensure(module, conn):
     name = module.params['name'].upper()
     default_tablespace = module.params['default_tablespace'].upper() if module.params['default_tablespace'] else None
     password = module.params['password']
-    roles = [item.upper() for item in module.params['roles']]
+    if module.params['roles']:
+        roles = [item.upper() for item in module.params['roles']]
+    else:
+        roles = None
     state = module.params['state']
     temporary_tablespace = module.params['temporary_tablespace'].upper() if module.params[
         'temporary_tablespace'] else None
-    sys_privs = [item.upper() for item in module.params['sys_privs']]
+    if module.params['sys_privs']:
+        sys_privs = [item.upper() for item in module.params['sys_privs']]
+    else:
+        sys_privs = None
 
     user = getUser(conn, name)
 
