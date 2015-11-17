@@ -89,6 +89,15 @@ except ImportError:
     oracleclient_found = False
 
 
+def map_mode(mode):
+    if mode == 'SYSDBA':
+        return cx_Oracle.SYSDBA
+    elif mode == 'SYSOPER':
+        return cx_Oracle.SYSOPER
+    else:
+        return None
+
+
 def create_connection(module, user, password, host, port, sid=None, service=None, mode=None):
     if sid:
         dsn = cx_Oracle.makedsn(host=host, port=port, sid=sid)
@@ -96,7 +105,11 @@ def create_connection(module, user, password, host, port, sid=None, service=None
         dsn = cx_Oracle.makedsn(host=host, port=port, service_name=service)
 
     try:
-        conn = cx_Oracle.connect(user=user, password=password, dsn=dsn)
+        if mode:
+            conn = cx_Oracle.connect(
+                user=user, password=password, dsn=dsn, mode=map_mode(mode))
+        else:
+            conn = cx_Oracle.connect(user=user, password=password, dsn=dsn)
         return conn
     except cx_Oracle.DatabaseError as e:
         module.fail_json(msg='{dsn}: {err}'.format(dsn=dsn, err=str(e)))
@@ -165,7 +178,8 @@ def get_drop_role_sql(name):
 
 def get_privilege_sql(action, name, priv):
     from_to = 'FROM' if action == 'REVOKE' else 'TO'
-    sql = '{action} {priv} {from_to} {name}'.format(action=action, priv=priv, from_to=from_to, name=name)
+    sql = '{action} {priv} {from_to} {name}'.format(
+        action=action, priv=priv, from_to=from_to, name=name)
     return sql
 
 
@@ -244,6 +258,8 @@ def main():
             oracle_host=dict(type='str', default='127.0.0.1'),
             oracle_port=dict(type='str', default='1521'),
             oracle_user=dict(type='str', default='SYSTEM'),
+            oracle_mode=dict(type='str', required=None, default=None, choices=[
+                             'SYSDBA', 'SYSOPER']),
             oracle_pass=dict(type='str', default=None, no_log=True),
             oracle_sid=dict(type='str', default=None),
             oracle_service=dict(type='str', default=None),
@@ -261,11 +277,12 @@ def main():
     oracle_port = module.params['oracle_port']
     oracle_user = module.params['oracle_user']
     oracle_pass = module.params['oracle_pass'] or os.environ['ORACLE_PASS']
+    oracle_mode = module.params['oracle_mode']
     oracle_sid = module.params['oracle_sid']
     oracle_service = module.params['oracle_service']
 
     conn = create_connection(module=module,
-                             user=oracle_user, password=oracle_pass,
+                             user=oracle_user, password=oracle_pass, mode=oracle_mode,
                              host=oracle_host, port=oracle_port,
                              sid=oracle_sid, service=oracle_service)
 
