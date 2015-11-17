@@ -32,7 +32,7 @@ Supported objects and operations:
 
 # Requirements
 
-- Python [cx_Oracle] must be installed on the Ansible controller node.
+- Python [cx_Oracle] 5.2 or greater must be installed on the Ansible controller node.
 
 # Usage
 
