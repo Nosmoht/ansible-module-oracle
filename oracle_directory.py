@@ -73,13 +73,13 @@ EXAMPLES = '''
 
 try:
     import cx_Oracle
+
+    oracleclient_found = True
 except ImportError:
     oracleclient_found = False
-else:
-    oracleclient_found = True
 
 
-def createConnection(module, user, password, host, port, sid=None, service=None, mode=None):
+def get_connection(module, user, password, host, port, sid=None, service=None, mode=None):
     if sid:
         dsn = cx_Oracle.makedsn(host=host, port=port, sid=sid)
     else:
@@ -92,7 +92,7 @@ def createConnection(module, user, password, host, port, sid=None, service=None,
         module.fail_json(msg='{dsn}: {err}'.format(dsn=dsn, err=str(e)))
 
 
-def executeSQL(module, conn, sql):
+def execute_sql(module, conn, sql):
     cur = conn.cursor()
     try:
         cur.execute(sql)
@@ -101,26 +101,27 @@ def executeSQL(module, conn, sql):
     cur.close()
 
 
-def getDirectory(module, conn, name):
+def get_directory(module, conn, name):
     sql = 'SELECT directory_name, directory_path FROM dba_directories where directory_name = :name'
     cur = conn.cursor()
+    data = None
     try:
         cur.prepare(sql)
         cur.execute(None, dict(name=name))
-        row = cur.fetchone()
+        data = cur.fetchone()
     except cx_Oracle.DatabaseError as e:
         module.fail_json(msg='{sql}: {err}'.format(sql=sql, err=str(e)))
     cur.close()
 
-    return None if not row else dict(name=row[0], path=row[1])
+    return None if not data else dict(name=data[0], path=data[1])
 
 
-def getCreateDirectorySQL(name, path):
+def get_create_directory_sql(name, path):
     sql = "CREATE OR REPLACE DIRECTORY {name} AS '{path}'".format(name=name, path=path)
     return sql
 
 
-def getDropDirectorySQL(name):
+def get_drop_directory_sql(name):
     sql = 'DROP DIRECTORY {name}'.format(name=name)
     return sql
 
@@ -131,17 +132,19 @@ def ensure(module, conn):
     state = module.params['state']
     sql = list()
 
-    dir = getDirectory(module, conn, name)
+    dir = get_directory(module, conn, name)
 
     if (not dir and state != 'absent') or (dir and dir.get('path') != path):
-        sql.append(getCreateDirectorySQL(name=name, path=path))
+        sql.append(get_create_directory_sql(name=name, path=path))
     elif dir and state == 'absent':
-        sql.append(getDropDirectorySQL(name=name))
+        sql.append(get_drop_directory_sql(name=name))
 
     if len(sql) > 0:
+        if module.check_mode:
+            module.exit_json(msg='; '.join(sql))
         for stmt in sql:
-            executeSQL(module, conn, stmt)
-        return True, getDirectory(module, conn, name)
+            execute_sql(module, conn, stmt)
+        return True, get_directory(module, conn, name)
     return False, dir
 
 
@@ -160,6 +163,7 @@ def main():
         ),
         required_one_of=[['oracle_sid', 'oracle_service']],
         mutually_exclusive=[['oracle_sid', 'oracle_service']],
+        supports_check_mode=True,
     )
 
     if not oracleclient_found:
@@ -173,13 +177,14 @@ def main():
     oracle_sid = module.params['oracle_sid']
     oracle_service = module.params['oracle_service']
 
-    conn = createConnection(module=module,
-                            user=oracle_user, password=oracle_pass,
-                            host=oracle_host, port=oracle_port,
-                            sid=oracle_sid, service=oracle_service)
+    conn = get_connection(module=module,
+                          user=oracle_user, password=oracle_pass,
+                          host=oracle_host, port=oracle_port,
+                          sid=oracle_sid, service=oracle_service)
 
     changed, role = ensure(module, conn)
     module.exit_json(changed=changed, role=role)
+
 
 # import module snippets
 from ansible.module_utils.basic import *
