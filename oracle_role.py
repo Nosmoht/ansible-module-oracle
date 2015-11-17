@@ -83,13 +83,13 @@ EXAMPLES = '''
 
 try:
     import cx_Oracle
+
+    oracleclient_found = True
 except ImportError:
     oracleclient_found = False
-else:
-    oracleclient_found = True
 
 
-def createConnection(module, user, password, host, port, sid=None, service=None, mode=None):
+def create_connection(module, user, password, host, port, sid=None, service=None, mode=None):
     if sid:
         dsn = cx_Oracle.makedsn(host=host, port=port, sid=sid)
     else:
@@ -102,7 +102,7 @@ def createConnection(module, user, password, host, port, sid=None, service=None,
         module.fail_json(msg='{dsn}: {err}'.format(dsn=dsn, err=str(e)))
 
 
-def executeSQL(module, conn, sql):
+def execute_sql(module, conn, sql):
     cur = conn.cursor()
     try:
         cur.execute(sql)
@@ -111,18 +111,17 @@ def executeSQL(module, conn, sql):
     cur.close()
 
 
-def getRole(module, conn, name):
+def get_role(module, conn, name):
     cur = conn.cursor()
     try:
         sql = 'SELECT role, password_required FROM DBA_ROLES WHERE role = :name'
         cur.prepare(sql)
         cur.execute(None, dict(name=name))
         row = cur.fetchone()
+        if not row:
+            return None
     except cx_Oracle.DatabaseError as e:
         module.fail_json(msg='{sql}: {err}'.format(sql=sql, err=str(e)))
-
-    if not row:
-        return None
 
     data = dict()
     data['name'] = row[0]
@@ -152,32 +151,33 @@ def getRole(module, conn, name):
     return data
 
 
-def getCreateRoleSQL(name, password_required=None):
+def get_create_role_sql(name, password_required=None):
     sql = 'CREATE ROLE {name}'.format(name=name)
     #   if password_required:
     #       sql='{sql}'
     return sql
 
 
-def getDropRoleSQL(name):
+def get_drop_role_sql(name):
     sql = 'DROP ROLE {name}'.format(name=name)
     return sql
 
 
-def getGrantPrivilegeSQL(name, priv):
-    sql = 'GRANT {priv} TO {name}'.format(priv=priv, name=name)
+def get_privilege_sql(action, name, priv):
+    from_to = 'FROM' if action == 'REVOKE' else 'TO'
+    sql = '{action} {priv} {from_to} {name}'.format(action=action, priv=priv, from_to=from_to, name=name)
     return sql
 
 
-def getRevokePrivilegeSQL(name, priv):
-    sql = 'REVOKE {priv} FROM {name}'.format(priv=priv, name=name)
-    return sql
+def get_grant_privilege_sql(name, priv):
+    return get_privilege_sql(action='GRANT', priv=priv, name=name)
+
+
+def get_revoke_privilege_sql(name, priv):
+    return get_privilege_sql(action='REVOKE', priv=priv, name=name)
 
 
 def ensure(module, conn):
-    changed = False
-    sql = list()
-
     name = module.params['name'].upper()
     if module.params['roles'] is not None:
         roles = [item.upper() for item in module.params['roles']]
@@ -189,12 +189,14 @@ def ensure(module, conn):
     else:
         sys_privs = None
 
-    role = getRole(module, conn, name)
+    role = get_role(module, conn, name)
+
+    sql = list()
 
     if not role and state != 'absent':
-        sql.append(getCreateRoleSQL(name=name))
+        sql.append(get_create_role_sql(name=name))
     elif role and state == 'absent':
-        sql.append(getDropRoleSQL(name=name))
+        sql.append(get_drop_role_sql(name=name))
 
     if state != 'absent':
         # Roles
@@ -202,31 +204,31 @@ def ensure(module, conn):
             roles_to_grant = list(
                 set(roles) - set(role.get('roles') if role else list()))
             for item in roles_to_grant:
-                sql.append(getGrantPrivilegeSQL(priv=item, name=name))
+                sql.append(get_grant_privilege_sql(priv=item, name=name))
 
             roles_to_revoke = list(
                 set(role.get('roles') if role else list()) - set(roles))
             for item in roles_to_revoke:
-                sql.append(getRevokePrivilegeSQL(priv=item, name=name))
+                sql.append(get_revoke_privilege_sql(priv=item, name=name))
 
         # System privileges
         if sys_privs is not None:
             privs_to_grant = list(
                 set(sys_privs) - set(role.get('sys_privs') if role else list()))
             for item in privs_to_grant:
-                sql.append(getGrantPrivilegeSQL(priv=item, name=name))
+                sql.append(get_grant_privilege_sql(priv=item, name=name))
 
             privs_to_revoke = list(
                 set(role.get('sys_privs') if role else list()) - set(sys_privs))
             for item in privs_to_revoke:
-                sql.append(getRevokePrivilegeSQL(priv=item, name=name))
+                sql.append(get_revoke_privilege_sql(priv=item, name=name))
 
     if len(sql) > 0:
         if module.check_mode:
-            module.exit_json(changed=True, msg="\n".join(sql), role=role)
+            module.exit_json(changed=True, msg='; '.join(sql), role=role)
         for stmt in sql:
-            executeSQL(module, conn, stmt)
-        return True, getRole(module, conn, name=name)
+            execute_sql(module, conn, stmt)
+        return True, get_role(module, conn, name=name)
 
     return False, role
 
@@ -262,13 +264,14 @@ def main():
     oracle_sid = module.params['oracle_sid']
     oracle_service = module.params['oracle_service']
 
-    conn = createConnection(module=module,
-                            user=oracle_user, password=oracle_pass,
-                            host=oracle_host, port=oracle_port,
-                            sid=oracle_sid, service=oracle_service)
+    conn = create_connection(module=module,
+                             user=oracle_user, password=oracle_pass,
+                             host=oracle_host, port=oracle_port,
+                             sid=oracle_sid, service=oracle_service)
 
     changed, role = ensure(module, conn)
     module.exit_json(changed=changed, role=role)
+
 
 # import module snippets
 from ansible.module_utils.basic import *
