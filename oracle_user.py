@@ -87,13 +87,13 @@ EXAMPLES = '''
 
 try:
     import cx_Oracle
+
+    oracleclient_found = True
 except ImportError:
     oracleclient_found = False
-else:
-    oracleclient_found = True
 
 
-def createConnection(module, user, password, host, port, sid=None, service=None, mode=None):
+def create_connection(module, user, password, host, port, sid=None, service=None, mode=None):
     if sid:
         dsn = cx_Oracle.makedsn(host=host, port=port, sid=sid)
     else:
@@ -105,7 +105,7 @@ def createConnection(module, user, password, host, port, sid=None, service=None,
         module.fail_json(msg='{dsn}: {err}'.format(dsn=dsn, err=str(e)))
 
 
-def executeSQL(module, con, sql):
+def execute_sql(module, con, sql):
     cur = con.cursor()
     try:
         cur.execute(sql)
@@ -114,16 +114,20 @@ def executeSQL(module, con, sql):
     cur.close()
 
 
-def getUser(con, name):
-    cur = con.cursor()
+def fetch_all(module, cur, sql):
     try:
-        cur.prepare(
-            'select u.default_tablespace,u.temporary_tablespace,s.password,u.account_status from dba_users u join sys.user$ s on (s.name = u.username) where s.name = :name')
+        cur.prepare(sql)
         cur.execute(None, dict(name=name))
-        row = cur.fetchone()
+        rows = cur.fetchall()
     except cx_Oracle.DatabaseError as e:
-        module.fail_json(msg='Error: {err}'.format(err=str(e)))
+        module.fail_json(msg='{sql}: {err}'.format(sql=sql, err=str(e)))
+    return rows
 
+
+def get_user(module, conn, name):
+    cur = conn.cursor()
+    sql = 'select u.default_tablespace,u.temporary_tablespace,s.password,u.account_status from dba_users u join sys.user$ s on (s.name = u.username) where s.name = :name'
+    row = fetch_all(module, cur, sql)
     if not row:
         return None
 
@@ -134,29 +138,19 @@ def getUser(con, name):
     data['password'] = row[2]
     data['account_status'] = row[3]
 
-    try:
-        cur.prepare(
-            'select granted_role from dba_role_privs where grantee = :name')
-        cur.execute(None, dict(name=name))
-        rows = cur.fetchall()
-        data['roles'] = [item[0] for item in rows]
-    except cx_Oracle.DatabaseError as e:
-        module.fail_json(msg='Error: {err}'.format(err=str(e)))
+    sql = 'select granted_role from dba_role_privs where grantee = :name'
+    rows = fetch_all(module, cur, sql)
+    data['roles'] = [item[0] for item in rows]
 
-    try:
-        cur.prepare('select privilege from dba_sys_privs where grantee = :name')
-        cur.execute(None, dict(name=name))
-        rows = cur.fetchall()
-
-        data['sys_privs'] = [item[0] for item in rows]
-    except cx_Oracle.DatabaseError as e:
-        module.fail_json(msg='Error: {err}'.format(err=str(e)))
+    sql = 'select privilege from dba_sys_privs where grantee = :name'
+    rows = fetch_all(module, cur, sql)
+    data['sys_privs'] = [item[0] for item in rows]
 
     cur.close()
     return data
 
 
-def getCreateUserSQL(name, userpass, default_tablespace=None, temporary_tablespace=None, account_status=None):
+def get_create_user_sql(name, userpass, default_tablespace=None, temporary_tablespace=None, account_status=None):
     sql = "CREATE USER {name} IDENTIFIED BY VALUES '{userpass}'".format(
         name=name, userpass=userpass)
     if default_tablespace:
@@ -171,12 +165,12 @@ def getCreateUserSQL(name, userpass, default_tablespace=None, temporary_tablespa
     return sql
 
 
-def getDropUserSQL(name):
+def get_drop_user_sql(name):
     sql = 'DROP USER "{name}" CASCADE'.format(name=name)
     return sql
 
 
-def getUpdateUserSQL(name, userpass=None, default_tablespace=None, temporary_tablespace=None, account_status=None):
+def get_alter_user_sql(name, userpass=None, default_tablespace=None, temporary_tablespace=None, account_status=None):
     sql = 'ALTER USER {name}'.format(name=name)
     if userpass:
         sql = "{sql} IDENTIFIED BY VALUES '{userpass}'".format(
@@ -193,25 +187,25 @@ def getUpdateUserSQL(name, userpass=None, default_tablespace=None, temporary_tab
     return sql
 
 
-def getGrantPrivilegeSQL(user, priv, admin=False):
+def get_grant_privilege_sql(user, priv, admin=False):
     sql = 'GRANT {priv} TO {user}'.format(priv=priv, user=user)
     if admin:
         sql = '{sql} WITH ADMIN OPTION'.format(sql=sql)
     return sql
 
 
-def getRevokePrivilegeSQL(user, priv):
+def get_revoke_privilege_sql(user, priv):
     sql = 'REVOKE {priv} FROM {user}'.format(priv=priv, user=user)
     return sql
 
 
-def mapState(state):
+def map_state(state):
     if state in ['present', 'unlocked']:
         return 'UNLOCK'
     return 'LOCK'
 
 
-def mapAccountStatus(account_status):
+def map_account_state(account_status):
     if account_status == 'OPEN':
         return ['present', 'unlocked']
     return 'locked'
@@ -236,28 +230,28 @@ def ensure(module, conn):
     else:
         sys_privs = None
 
-    user = getUser(conn, name)
+    user = get_user(conn, name)
 
     if not user and state != 'absent':
-        sql.append(getCreateUserSQL(name=name,
-                                    userpass=password,
-                                    default_tablespace=default_tablespace,
-                                    temporary_tablespace=temporary_tablespace,
-                                    account_status=mapState(state)))
+        sql.append(get_create_user_sql(name=name,
+                                       userpass=password,
+                                       default_tablespace=default_tablespace,
+                                       temporary_tablespace=temporary_tablespace,
+                                       account_status=map_state(state)))
     else:
         if state == 'absent':
-            sql.append(getDropUserSQL(name=name))
+            sql.append(get_drop_user_sql(name=name))
         else:
-            if state not in mapAccountStatus(user.get('account_status')):
-                sql.append(getUpdateUserSQL(
-                    name=name, account_status=mapState(state)))
+            if state not in map_account_state(user.get('account_status')):
+                sql.append(get_alter_user_sql(
+                    name=name, account_status=map_state(state)))
             if password and user.get('password') != password:
-                sql.append(getUpdateUserSQL(name=name, userpass=password))
+                sql.append(get_alter_user_sql(name=name, userpass=password))
             if default_tablespace and user.get('default_tablespace') != default_tablespace:
-                sql.append(getUpdateUserSQL(
+                sql.append(get_alter_user_sql(
                     name=name, default_tablespace=default_tablespace))
             if temporary_tablespace and user.get('temporary_tablespace') != temporary_tablespace:
-                sql.append(getUpdateUserSQL(
+                sql.append(get_alter_user_sql(
                     name=name, temporary_tablespace=temporary_tablespace))
 
     if state != 'absent':
@@ -265,29 +259,29 @@ def ensure(module, conn):
             priv_to_grant = list(
                 set(roles) - set(user.get('roles') if user else list()))
             for priv in priv_to_grant:
-                sql.append(getGrantPrivilegeSQL(user=name, priv=priv))
+                sql.append(get_grant_privilege_sql(user=name, priv=priv))
             priv_to_revoke = list(
                 set(user.get('roles') if user else list()) - set(roles))
             for priv in priv_to_revoke:
-                sql.append(getRevokePrivilegeSQL(user=name, priv=priv))
+                sql.append(get_revoke_privilege_sql(user=name, priv=priv))
 
         # System privileges
         if sys_privs is not None:
             privs_to_grant = list(
                 set(sys_privs) - set(user.get('sys_privs') if user else list()))
             for priv in privs_to_grant:
-                sql.append(getGrantPrivilegeSQL(user=name, priv=priv))
+                sql.append(get_grant_privilege_sql(user=name, priv=priv))
             priv_to_revoke = list(
                 set(user.get('sys_privs') if user else list()) - set(sys_privs))
             for priv in priv_to_revoke:
-                sql.append(getRevokePrivilegeSQL(user=name, priv=priv))
+                sql.append(get_revoke_privilege_sql(user=name, priv=priv))
 
     if len(sql) != 0:
         if module.check_mode:
             module.exit_json(changed=True, msg="\n".join(sql), user=user)
         for stmt in sql:
-            executeSQL(module, conn, stmt)
-        return True, getUser(conn, name)
+            execute_sql(module, conn, stmt)
+        return True, get_user(conn, name)
     return False, user
 
 
@@ -325,13 +319,14 @@ def main():
     oracle_sid = module.params['oracle_sid']
     oracle_service = module.params['oracle_service']
 
-    conn = createConnection(module=module,
-                            user=oracle_user, password=oracle_pass,
-                            host=oracle_host, port=oracle_port,
-                            sid=oracle_sid, service=oracle_service)
+    conn = create_connection(module=module,
+                             user=oracle_user, password=oracle_pass,
+                             host=oracle_host, port=oracle_port,
+                             sid=oracle_sid, service=oracle_service)
 
     changed, user = ensure(module, conn)
     module.exit_json(changed=changed, user=user)
+
 
 # import module snippets
 from ansible.module_utils.basic import *
