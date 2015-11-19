@@ -47,7 +47,15 @@ options:
     - Password to be used to authenticate.
     - Can be omitted if environment variable ORACLE_PASS is set.
     required: False
-    default: manager
+    default: None
+  oracle_mode:
+    description:
+    - Connection mode.
+    - Can be either of SYSASM, SYSDBA or SYSOPER.
+    - Omit for normal connection.
+    required: False
+    default: None
+    choices: ['SYSASM', 'SYSDBA', 'SYSOPER']
   oracle_sid:
     description:
     - SID to connect to
@@ -59,7 +67,7 @@ options:
     required: False
     default: None
 notes:
-- Requires cx_Oracle
+- Requires cx_Oracle 5.2 or greate
 #version_added: "2.0"
 author: "Thomas Krahn (@nosmoht)"
 '''
@@ -134,8 +142,8 @@ def get_system_parameter(module, conn, name):
 
 def get_alter_system_sql(name, value, scope, reset=False):
     action = 'RESET' if reset else 'SET'
-    sql = "ALTER SYSTEM {action} {name}='{value}' SCOPE={scope}".format(action=action, name=name, value=value,
-                                                                        scope=scope)
+    sql = "ALTER SYSTEM {action} \"{name}\"='{value}' SCOPE={scope}".format(action=action, name=name, value=value,
+                                                                            scope=scope)
     return sql
 
 
