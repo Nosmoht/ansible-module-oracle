@@ -93,13 +93,27 @@ except ImportError:
     oracleclient_found = False
 
 
+def map_mode(mode):
+    if mode == 'SYSDBA':
+        return cx_Oracle.SYSDBA
+    elif mode == 'SYSOPER':
+        return cx_Oracle.SYSOPER
+    else:
+        return None
+
+
 def create_connection(module, user, password, host, port, sid=None, service=None, mode=None):
     if sid:
         dsn = cx_Oracle.makedsn(host=host, port=port, sid=sid)
     else:
         dsn = cx_Oracle.makedsn(host=host, port=port, service_name=service)
+
     try:
-        conn = cx_Oracle.connect(user=user, password=password, dsn=dsn)
+        if mode:
+            conn = cx_Oracle.connect(
+                user=user, password=password, dsn=dsn, mode=map_mode(mode))
+        else:
+            conn = cx_Oracle.connect(user=user, password=password, dsn=dsn)
         return conn
     except cx_Oracle.DatabaseError as e:
         module.fail_json(msg='{dsn}: {err}'.format(dsn=dsn, err=str(e)))
@@ -114,7 +128,7 @@ def execute_sql(module, con, sql):
     cur.close()
 
 
-def fetch_all(module, cur, sql):
+def fetch_all(module, cur, sql, name):
     try:
         cur.prepare(sql)
         cur.execute(None, dict(name=name))
@@ -126,24 +140,24 @@ def fetch_all(module, cur, sql):
 
 def get_user(module, conn, name):
     cur = conn.cursor()
-    sql = 'select u.default_tablespace,u.temporary_tablespace,s.password,u.account_status from dba_users u join sys.user$ s on (s.name = u.username) where s.name = :name'
-    row = fetch_all(module, cur, sql)
+    sql = 'select u.default_tablespace, u.temporary_tablespace, s.password, u.account_status from dba_users u join sys.user$ s on (s.name = u.username) where s.name = :name'
+    row = fetch_all(module, cur, sql, name)
     if not row:
         return None
 
     data = dict()
     data['name'] = name
-    data['default_tablespace'] = row[0]
-    data['temporary_tablespace'] = row[1]
-    data['password'] = row[2]
-    data['account_status'] = row[3]
+    data['default_tablespace'] = row[0][0]
+    data['temporary_tablespace'] = row[0][1]
+    data['password'] = row[0][2]
+    data['account_status'] = row[0][3]
 
     sql = 'select granted_role from dba_role_privs where grantee = :name'
-    rows = fetch_all(module, cur, sql)
+    rows = fetch_all(module, cur, sql, name)
     data['roles'] = [item[0] for item in rows]
 
     sql = 'select privilege from dba_sys_privs where grantee = :name'
-    rows = fetch_all(module, cur, sql)
+    rows = fetch_all(module, cur, sql, name)
     data['sys_privs'] = [item[0] for item in rows]
 
     cur.close()
@@ -230,7 +244,7 @@ def ensure(module, conn):
     else:
         sys_privs = None
 
-    user = get_user(conn, name)
+    user = get_user(module, conn, name)
 
     if not user and state != 'absent':
         sql.append(get_create_user_sql(name=name,
@@ -281,7 +295,7 @@ def ensure(module, conn):
             module.exit_json(changed=True, msg="\n".join(sql), user=user)
         for stmt in sql:
             execute_sql(module, conn, stmt)
-        return True, get_user(conn, name)
+        return True, get_user(module, conn, name)
     return False, user
 
 
@@ -299,6 +313,8 @@ def main():
             oracle_host=dict(type='str', default='127.0.0.1'),
             oracle_port=dict(type='str', default='1521'),
             oracle_user=dict(type='str', default='SYSTEM'),
+            oracle_mode=dict(type='str', required=None, default=None, choices=[
+                             'SYSDBA', 'SYSOPER']),
             oracle_pass=dict(type='str', default=None, no_log=True),
             oracle_sid=dict(type='str', default=None),
             oracle_service=dict(type='str', default=None),
@@ -315,12 +331,13 @@ def main():
     oracle_host = module.params['oracle_host']
     oracle_port = module.params['oracle_port']
     oracle_user = module.params['oracle_user']
+    oracle_mode = module.params['oracle_mode']
     oracle_pass = module.params['oracle_pass'] or os.environ['ORACLE_PASS']
     oracle_sid = module.params['oracle_sid']
     oracle_service = module.params['oracle_service']
 
     conn = create_connection(module=module,
-                             user=oracle_user, password=oracle_pass,
+                             user=oracle_user, password=oracle_pass, mode=oracle_mode,
                              host=oracle_host, port=oracle_port,
                              sid=oracle_sid, service=oracle_service)
 
