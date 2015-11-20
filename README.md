@@ -23,7 +23,7 @@ Supported objects and operations:
   - grant and revoke system privileges
   - grant and revoke roles
 - System parameters
-  - set and reset
+  - set and reset, even hidden parameters
 - Users
   - create, update, delete
   - lock and unlock
@@ -40,15 +40,14 @@ Supported objects and operations:
 
 For all modules the following parameters must be passed. On of either __oracle_sid__ and __oralce_service__
 must be passed but not both. __oracle_pass__ can be omitted if defined in environment variable __ORACLE_PASS__.
-
-__NOTE__:  Connect as SYSDBA is not yet implemented. Ensure to use an account
-that has the required privileges.
+To connect as SYSDBA or SYSOPER set __oracle_mode__ to the corresponding value, omit for normal connection.
 
 ```yaml
 oracle_host: <hostname or ip of database>
 oracle_port: <port>
 oracle_user: <username>
 oracle_pass: <password>
+oracle_mode: <[SYSDBA|SYSOPER]>
 oracle_sid: <SID>
 oracle_service: <service_name>
 ```
@@ -115,11 +114,14 @@ __NOTE__: Password must be the hashed value from sys.user$.password.
     roles:
     - CONNECT
     - SELECT ANY DICTIONARY
+    sys_privs:
+    - UNLIMITED TABLESPACE
     state: unlocked
     oracle_host: db.example.com
     oracle_port: 1521
-    oracle_user: system
-    oracle_pass: manager
+    oracle_user: sys
+    oracle_pass: topsecret
+    oracle_mode: SYSDBA
     oracle_sid: ORCL
 ```
 
