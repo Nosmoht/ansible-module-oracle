@@ -107,7 +107,7 @@ def create_connection(module, user, password, host, port, sid=None, service=None
     try:
         if mode:
             conn = cx_Oracle.connect(
-                user=user, password=password, dsn=dsn, mode=map_mode(mode))
+                    user=user, password=password, dsn=dsn, mode=map_mode(mode))
         else:
             conn = cx_Oracle.connect(user=user, password=password, dsn=dsn)
         return conn
@@ -179,7 +179,7 @@ def get_drop_role_sql(name):
 def get_privilege_sql(action, name, priv):
     from_to = 'FROM' if action == 'REVOKE' else 'TO'
     sql = '{action} {priv} {from_to} {name}'.format(
-        action=action, priv=priv, from_to=from_to, name=name)
+            action=action, priv=priv, from_to=from_to, name=name)
     return sql
 
 
@@ -216,30 +216,30 @@ def ensure(module, conn):
         # Roles
         if roles is not None:
             roles_to_grant = list(
-                set(roles) - set(role.get('roles') if role else list()))
+                    set(roles) - set(role.get('roles') if role else list()))
             for item in roles_to_grant:
                 sql.append(get_grant_privilege_sql(priv=item, name=name))
 
             roles_to_revoke = list(
-                set(role.get('roles') if role else list()) - set(roles))
+                    set(role.get('roles') if role else list()) - set(roles))
             for item in roles_to_revoke:
                 sql.append(get_revoke_privilege_sql(priv=item, name=name))
 
         # System privileges
         if sys_privs is not None:
             privs_to_grant = list(
-                set(sys_privs) - set(role.get('sys_privs') if role else list()))
+                    set(sys_privs) - set(role.get('sys_privs') if role else list()))
             for item in privs_to_grant:
                 sql.append(get_grant_privilege_sql(priv=item, name=name))
 
             privs_to_revoke = list(
-                set(role.get('sys_privs') if role else list()) - set(sys_privs))
+                    set(role.get('sys_privs') if role else list()) - set(sys_privs))
             for item in privs_to_revoke:
                 sql.append(get_revoke_privilege_sql(priv=item, name=name))
 
     if len(sql) > 0:
         if module.check_mode:
-            module.exit_json(changed=True, msg='; '.join(sql), role=role)
+            module.exit_json(changed=True, msg=sql, role=role)
         for stmt in sql:
             execute_sql(module, conn, stmt)
         return True, get_role(module, conn, name=name)
@@ -249,29 +249,29 @@ def ensure(module, conn):
 
 def main():
     module = AnsibleModule(
-        argument_spec=dict(
-            name=dict(type='str', required=True),
-            roles=dict(type='list', default=None),
-            state=dict(type='str', default='present',
-                       choices=['present', 'absent']),
-            sys_privs=dict(type='list', default=None),
-            oracle_host=dict(type='str', default='127.0.0.1'),
-            oracle_port=dict(type='str', default='1521'),
-            oracle_user=dict(type='str', default='SYSTEM'),
-            oracle_mode=dict(type='str', required=None, default=None, choices=[
-                             'SYSDBA', 'SYSOPER']),
-            oracle_pass=dict(type='str', default=None, no_log=True),
-            oracle_sid=dict(type='str', default=None),
-            oracle_service=dict(type='str', default=None),
-        ),
-        required_one_of=[['oracle_sid', 'oracle_service']],
-        mutually_exclusive=[['oracle_sid', 'oracle_service']],
-        supports_check_mode=True,
+            argument_spec=dict(
+                    name=dict(type='str', required=True),
+                    roles=dict(type='list', default=None),
+                    state=dict(type='str', default='present',
+                               choices=['present', 'absent']),
+                    sys_privs=dict(type='list', default=None),
+                    oracle_host=dict(type='str', default='127.0.0.1'),
+                    oracle_port=dict(type='str', default='1521'),
+                    oracle_user=dict(type='str', default='SYSTEM'),
+                    oracle_mode=dict(type='str', required=None, default=None, choices=[
+                        'SYSDBA', 'SYSOPER']),
+                    oracle_pass=dict(type='str', default=None, no_log=True),
+                    oracle_sid=dict(type='str', default=None),
+                    oracle_service=dict(type='str', default=None),
+            ),
+            required_one_of=[['oracle_sid', 'oracle_service']],
+            mutually_exclusive=[['oracle_sid', 'oracle_service']],
+            supports_check_mode=True,
     )
 
     if not oracleclient_found:
         module.fail_json(
-            msg='cx_Oracle not found. Needs to be installed. See http://cx-oracle.sourceforge.net/')
+                msg='cx_Oracle not found. Needs to be installed. See http://cx-oracle.sourceforge.net/')
 
     oracle_host = module.params['oracle_host']
     oracle_port = module.params['oracle_port']
