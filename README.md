@@ -29,6 +29,10 @@ Supported objects and operations:
   - lock and unlock
   - grant and revoke roles
   - grant and revoke system privileges
+- Check mode
+  All modules support Ansible's check mode. If check mode is enabled all SQL statements that would be executed are
+  returned and can be checked. One can register the output of each module and check the results _msg_ variable to see
+  all statements.
 
 # Requirements
 
@@ -41,6 +45,8 @@ Supported objects and operations:
 For all modules the following parameters must be passed. On of either __oracle_sid__ and __oralce_service__
 must be passed but not both. __oracle_pass__ can be omitted if defined in environment variable __ORACLE_PASS__.
 To connect as SYSDBA or SYSOPER set __oracle_mode__ to the corresponding value, omit for normal connection.
+
+As [cx_Oracle] is required one should use local action to avoid the installation of cx_Oracle on all database systems.
 
 ```yaml
 oracle_host: <hostname or ip of database>
