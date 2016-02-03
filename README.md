@@ -5,9 +5,10 @@ Oracle library for Ansible
 - [Usage](#usage)
  - [Common](#common)
  - [Directory](#directory)
- - [User](#user)
  - [Role](#role)
  - [System Parameters](#system-parameters)
+ - [Tablespaces](#tablespaces)
+ - [User](#user)
 - [Author](#author)
 
 # Introduction
@@ -24,6 +25,9 @@ Supported objects and operations:
   - grant and revoke roles
 - System parameters
   - set and reset, even hidden parameters
+- Tablespaces
+  - create and delete
+  - add and modify datafiles
 - Users
   - create, update, delete
   - lock and unlock
@@ -102,6 +106,35 @@ Provided value is compared to column __value__ AND __display_value__ of v$system
     state: present
     oracle_host: db.example.com
     oracle_port: 1521
+    oracle_user: system
+    oracle_pass: manager
+    oracle_sid: ORCL
+```
+
+## Tablespaces
+Ensure tablespace USERS exist, can grow up to 2G in 16M steps. Tablespace will be created if it does not exist.
+```yaml
+- name: Ensure tablespace users is present
+  oracle_tablespace:
+    name: USERS
+    state: present
+    init_size: 100M
+    autoextend: true
+    next_size: 16M
+    max_size: 2G
+    oracle_host: db.example.com
+    oracle_user: system
+    oracle_pass: manager
+    oracle_sid: ORCL
+```
+
+Ensure tablespace TEST does not exist.
+```yaml
+- name: Ensure tablespace users is present
+  oracle_tablespace:
+    name: TEST
+    state: absent
+    oracle_host: db.example.com
     oracle_user: system
     oracle_pass: manager
     oracle_sid: ORCL
