@@ -101,7 +101,7 @@ def create_connection(module, user, password, host, port, sid=None, service=None
     try:
         if mode:
             conn = cx_Oracle.connect(
-                    user=user, password=password, dsn=dsn, mode=map_mode(mode))
+                user=user, password=password, dsn=dsn, mode=map_mode(mode))
         else:
             conn = cx_Oracle.connect(user=user, password=password, dsn=dsn)
         return conn
@@ -133,7 +133,7 @@ def get_datafiles(module, conn, ts):
     cur = conn.cursor()
     try:
         cur.prepare(sql)
-        cur.execute(None, dict(ts=ts))
+        cur.execute(None, dict(name=ts))
         data = cur.fetchall()
     except cx_Oracle.DatabaseError as e:
         module.fail_json(msg='{sql}: {err}'.format(sql=sql, err=str(e)))
@@ -142,7 +142,7 @@ def get_datafiles(module, conn, ts):
     datafiles = list()
     for row in data:
         datafiles.append(
-                dict(file_id=row[0], name=row[1], bytes=row[2], maxbytes=row[3], increment_by=row[4]))
+            dict(file_id=row[0], name=row[1], bytes=row[2], maxbytes=row[3], increment_by=row[4]))
     return datafiles
 
 
@@ -178,12 +178,14 @@ def get_create_tablespace_sql(name, blocksize, num_datafiles, init_size, autoext
             sql = '{sql} AUTOEXTEND OFF'.format(sql=sql)
 
     if blocksize:
-        sql = '{sql} BLOCKSIZE {blocksize}'.format(sql=sql, blocksize=blocksize)
+        sql = '{sql} BLOCKSIZE {blocksize}'.format(
+            sql=sql, blocksize=blocksize)
     return sql
 
 
 def get_drop_tablespace_sql(name):
-    sql = 'DROP TABLESPACE {name} INCLUDING CONTENTS AND DATAFILES'.format(name=name)
+    sql = 'DROP TABLESPACE {name} INCLUDING CONTENTS AND DATAFILES'.format(
+        name=name)
     return sql
 
 
@@ -197,20 +199,23 @@ def get_alter_datafile_sql(file_id, autoextend, next_size, max_size):
     return sql
 
 
+def get_resize_datafile_sql(file_id, size):
+    return 'ALTER DATABASE DATAFILE {file_id} RESIZE {size}'.format(file_id=file_id, size=size)
+
+
 def size_to_bytes(size, blocksize):
     # Return amount of bytes represented by size
     # Example: size_to_bytes("16M") = 16777216
     # Note: UNLIMITED is NOT 4194304 * blocksize, but 4194302 * blocksize
     if size.upper() == 'UNLIMITED':
         return ((4 * 1024 * 1024) - 2) * blocksize
-    m = re.match("([0-9]+)\s*([KMG])?", size)
+    m = re.match("([0-9]+)\s*([kKmMgG])?", size)
     if not m:
         return None
     num = int(m.group(1))
-    unit = m.group(2)
-    if not unit:
+    if not m.group(2):
         return num
-
+    unit = m.group(2).upper()
     for f in ("K", "M", "G"):
         num *= 1024
         if f == unit:
@@ -222,10 +227,10 @@ def ensure(module, conn):
     name = module.params['name'].upper()
     blocksize = module.params['blocksize']
     num_datafiles = module.params['num_datafiles']
-    init_size = calc_size(module.params['init_size'])
+    init_size = module.params['init_size']
     autoextend = module.params['autoextend']
-    next_size = calc_size(module.params['next_size'])
-    max_size = calc_size(module.params['max_size'])
+    next_size = module.params['next_size']
+    max_size = module.params['max_size']
     state = module.params['state']
     sql = list()
 
@@ -238,52 +243,58 @@ def ensure(module, conn):
                                                  max_size=max_size))
         else:
             for df in tbs.get('datafiles', None):
-                maxbytes = size_to_bytes(max_size, blocksize)
-                increment_by = size_to_bytes(next_size, blocksize)
+                block_size = size_to_bytes(blocksize, None)
+                byte=size_to_bytes(init_size, block_size)
+                maxbytes = size_to_bytes(max_size, block_size)
+                increment_by = size_to_bytes(next_size, block_size) / block_size
                 if df.get('maxbytes', None) != maxbytes or df.get('increment_by') != increment_by:
-                    sql.append(get_alter_datafile_sql(file_id=file_id, autoextend=autoextend, next_size=next_size,
+                    sql.append(get_alter_datafile_sql(file_id=df.get('file_id'), autoextend=autoextend, next_size=next_size,
                                                       max_size=max_size))
+                if (not autoextend and df.get('bytes') > byte):
+                    sql.append(get_resize_datafile_sql(
+                        file_id=df.get('file_id'), size=maxbytes))
     elif state == 'absent':
         if tbs:
             sql.append(get_drop_tablespace_sql(name=name))
 
     if len(sql) > 0:
         if module.check_mode:
-            module.exit_json(changed=True, msg=sql)
+            module.exit_json(changed=True, tablespace=tbs, sql=sql)
         for stmt in sql:
             execute_sql(module=module, con=conn, sql=stmt)
-        return True, get_tablespace(module=module, conn=conn, name=name)
-    return False, tbs
+        return True, get_tablespace(module=module, conn=conn, name=name), sql
+    return False, tbs, None
 
 
 def main():
     module = AnsibleModule(
-            argument_spec=dict(
-                    name=dict(type='str', required=True),
-                    blocksize=dict(type='str', required=False, default='8k'),
-                    num_datafiles=dict(type='int', required=False, default=1),
-                    autoextend=dict(type='bool', required=False, default=False),
-                    init_size=dict(type='str', required=False, default='1M'),
-                    next_size=dict(type='str', required=False, default='1M'),
-                    max_size=dict(type='str', required=False, default='UNLIMITED'),
-                    state=dict(type='str', default='present', choices=['present', 'absent']),
-                    oracle_host=dict(type='str', default='127.0.0.1'),
-                    oracle_port=dict(type='str', default='1521'),
-                    oracle_user=dict(type='str', default='SYSTEM'),
-                    oracle_mode=dict(type='str', required=None, default=None, choices=[
-                        'SYSDBA', 'SYSOPER']),
-                    oracle_pass=dict(type='str', default=None, no_log=True),
-                    oracle_sid=dict(type='str', default=None),
-                    oracle_service=dict(type='str', default=None),
-            ),
-            required_one_of=[['oracle_sid', 'oracle_service']],
-            mutually_exclusive=[['oracle_sid', 'oracle_service']],
-            supports_check_mode=True,
+        argument_spec=dict(
+            name=dict(type='str', required=True),
+            blocksize=dict(type='str', required=False, default='8k'),
+            num_datafiles=dict(type='int', required=False, default=1),
+            autoextend=dict(type='bool', required=False, default=False),
+            init_size=dict(type='str', required=False, default='1M'),
+            next_size=dict(type='str', required=False, default='0'),
+            max_size=dict(type='str', required=False, default='0'),
+            state=dict(type='str', default='present',
+                       choices=['present', 'absent']),
+            oracle_host=dict(type='str', default='127.0.0.1'),
+            oracle_port=dict(type='str', default='1521'),
+            oracle_user=dict(type='str', default='SYSTEM'),
+            oracle_mode=dict(type='str', required=None, default=None, choices=[
+                'SYSDBA', 'SYSOPER']),
+            oracle_pass=dict(type='str', default=None, no_log=True),
+            oracle_sid=dict(type='str', default=None),
+            oracle_service=dict(type='str', default=None),
+        ),
+        required_one_of=[['oracle_sid', 'oracle_service']],
+        mutually_exclusive=[['oracle_sid', 'oracle_service']],
+        supports_check_mode=True,
     )
 
     if not oracleclient_found:
         module.fail_json(
-                msg='cx_Oracle not found. Needs to be installed. See http://cx-oracle.sourceforge.net/')
+            msg='cx_Oracle not found. Needs to be installed. See http://cx-oracle.sourceforge.net/')
 
     oracle_host = module.params['oracle_host']
     oracle_port = module.params['oracle_port']
@@ -299,8 +310,8 @@ def main():
                              sid=oracle_sid, service=oracle_service)
 
     try:
-        changed, tablespace = ensure(module, conn)
-        module.exit_json(changed=changed, tablespace=tablespace)
+        changed, tablespace, sql = ensure(module, conn)
+        module.exit_json(changed=changed, tablespace=tablespace, sql=sql)
     except Exception as e:
         module.fail_json(msg=e.message)
 
