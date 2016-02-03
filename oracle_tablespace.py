@@ -6,9 +6,9 @@ DOCUMENTATION = '''
 module: oracle_tablespace
 short_description: Manage Oracle tablespaces and datafiles
 description:
-- Create and delete Oracle tablespaces
-- Add, modify or delete datafiles
-- All datafiles will be handled equal
+- Create and delete Oracle tablespaces.
+- Add and modify datafiles.
+- All datafiles will be handled equal.
 options:
   name:
     description:
@@ -17,8 +17,28 @@ options:
   num_datafiles:
     description:
     - Amount of datafiles belonging to the tablespace
-    required: False
+    required: false
     default: 1
+  autoextend:
+    description:
+    - Boolean to define if autoextend of datafiles is enabled or disabled
+    required: false
+    default: false
+  init_size:
+    description:
+    - Initial size of a datafile if it will be created
+    required: false
+    default: 1M
+  next_size:
+    description:
+    - Size of the next extend of each datafile if autoextend is enabled
+    required: false
+    default: 0
+  max_size:
+    description:
+    - Max size of each datafile if autoextend is enabled
+    required: false
+    default: 0
   state:
     description:
     - Tablespace state
@@ -57,22 +77,34 @@ options:
     default: None
 notes:
 - Requires cx_Oracle
-#version_added: "2.0"
 author: "Thomas Krahn (@nosmoht)"
 '''
 
 EXAMPLES = '''
+# Ensure tablespace USERS exist, can grow up to 2G in 16M steps.
+# Tablespace will be created if it does not exist.
 - name: Ensure tablespace users is present
-  oracle_user:
-    name: pinky
-    default_tablespace: DATA
-    temporary_tablespace: TEMP
-    password: 975C9ABC52D157E5
-    roles:
-    - DBA
-    sys_privs:
-    - CONNECT
-    - UNLIMITED TABLESPACE
+  oracle_tablespace:
+    name: USERS
+    state: present
+    init_size: 100M
+    autoextend: true
+    next_size: 16M
+    max_size: 2G
+    oracle_host: db.example.com
+    oracle_user: system
+    oracle_pass: manager
+    oracle_sid: ORCL
+
+# Ensure tablespace TEST does not exist.
+- name: Ensure tablespace users is present
+  oracle_tablespace:
+    name: TEST
+    state: absent
+    oracle_host: db.example.com
+    oracle_user: system
+    oracle_pass: manager
+    oracle_sid: ORCL
 '''
 
 try:
