@@ -239,7 +239,7 @@ def ensure(module, conn):
 
     if len(sql) > 0:
         if module.check_mode:
-            module.exit_json(changed=True, msg=sql, role=role)
+            module.exit_json(changed=True, sql=sql, role=role)
         for stmt in sql:
             execute_sql(module, conn, stmt)
         return True, get_role(module, conn, name=name)

@@ -163,7 +163,7 @@ def ensure(module, conn):
             sql.append(get_alter_system_sql(name=name, value=value, scope=scope, reset=False))
     if len(sql) > 0:
         if module.check_mode:
-            module.exit_json(changed=True, msg=sql)
+            module.exit_json(changed=True, sql=sql)
         for stmt in sql:
             execute_sql(module, conn, stmt)
         return True, get_system_parameter(name=name)

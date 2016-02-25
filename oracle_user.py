@@ -292,7 +292,7 @@ def ensure(module, conn):
 
     if len(sql) != 0:
         if module.check_mode:
-            module.exit_json(changed=True, msg=sql, user=user)
+            module.exit_json(changed=True, sql=sql, user=user)
         for stmt in sql:
             execute_sql(module, conn, stmt)
         return True, get_user(module, conn, name)

@@ -35,7 +35,7 @@ Supported objects and operations:
   - grant and revoke system privileges
 - Check mode
   All modules support Ansible's check mode. If check mode is enabled all SQL statements that would be executed are
-  returned and can be checked. One can register the output of each module and check the results _msg_ variable to see
+  returned and can be checked. One can register the output of each module and check the results _sql_ variable to see
   all statements.
 
 # Requirements
