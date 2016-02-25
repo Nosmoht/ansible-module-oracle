@@ -166,7 +166,7 @@ def ensure(module, conn):
             module.exit_json(changed=True, sql=sql)
         for stmt in sql:
             execute_sql(module, conn, stmt)
-        return True, get_system_parameter(name=name)
+        return True, get_system_parameter(module=module, conn=conn, name=name)
     return False, data
 
 
