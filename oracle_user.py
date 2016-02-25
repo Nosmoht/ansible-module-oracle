@@ -17,6 +17,11 @@ options:
   password:
     description:
     - Password hash as in SYS.USER$.PASSWORD
+  password_mismatch:
+    description:
+    - Boolean to define if a mismatch of current with specified password is allowed.
+    - If True, the password will not be changed if it's different.
+    - If False, password will be changed if possible.
   roles:
     description:
     - List of roles granted to the user.
@@ -111,7 +116,7 @@ def create_connection(module, user, password, host, port, sid=None, service=None
     try:
         if mode:
             conn = cx_Oracle.connect(
-                    user=user, password=password, dsn=dsn, mode=map_mode(mode))
+                user=user, password=password, dsn=dsn, mode=map_mode(mode))
         else:
             conn = cx_Oracle.connect(user=user, password=password, dsn=dsn)
         return conn
@@ -166,16 +171,16 @@ def get_user(module, conn, name):
 
 def get_create_user_sql(name, userpass, default_tablespace=None, temporary_tablespace=None, account_status=None):
     sql = "CREATE USER {name} IDENTIFIED BY VALUES '{userpass}'".format(
-            name=name, userpass=userpass)
+        name=name, userpass=userpass)
     if default_tablespace:
         sql = '{sql} DEFAULT TABLESPACE {default_tablespace}'.format(
-                sql=sql, default_tablespace=default_tablespace)
+            sql=sql, default_tablespace=default_tablespace)
     if temporary_tablespace:
         sql = '{sql} TEMPORARY TABLESPACE {temporary_tablespace}'.format(
-                sql=sql, temporary_tablespace=temporary_tablespace)
+            sql=sql, temporary_tablespace=temporary_tablespace)
     if account_status:
         sql = '{sql} ACCOUNT {account_status}'.format(
-                sql=sql, account_status=account_status)
+            sql=sql, account_status=account_status)
     return sql
 
 
@@ -188,16 +193,16 @@ def get_alter_user_sql(name, userpass=None, default_tablespace=None, temporary_t
     sql = 'ALTER USER {name}'.format(name=name)
     if userpass:
         sql = "{sql} IDENTIFIED BY VALUES '{userpass}'".format(
-                sql=sql, userpass=userpass)
+            sql=sql, userpass=userpass)
     if default_tablespace:
         sql = '{sql} DEFAULT TABLESPACE {default_tablespace}'.format(
-                sql=sql, default_tablespace=default_tablespace)
+            sql=sql, default_tablespace=default_tablespace)
     if temporary_tablespace:
         sql = '{sql} TEMPORARY TABLESPACE {temporary_tablespace}'.format(
-                sql=sql, temporary_tablespace=temporary_tablespace)
+            sql=sql, temporary_tablespace=temporary_tablespace)
     if account_status:
         sql = '{sql} ACCOUNT {account_state}'.format(
-                sql=sql, account_state=account_status)
+            sql=sql, account_state=account_status)
     return sql
 
 
@@ -232,6 +237,7 @@ def ensure(module, conn):
     default_tablespace = module.params['default_tablespace'].upper() if module.params[
         'default_tablespace'] else None
     password = module.params['password']
+    password_mismatch = module.params['password_mismatch']
     if module.params['roles'] is not None:
         roles = [item.upper() for item in module.params['roles']]
     else:
@@ -258,35 +264,35 @@ def ensure(module, conn):
         else:
             if state not in map_account_state(user.get('account_status')):
                 sql.append(get_alter_user_sql(
-                        name=name, account_status=map_state(state)))
-            if password and user.get('password') != password:
+                    name=name, account_status=map_state(state)))
+            if password and (user.get('password') != password and not password_mismatch):
                 sql.append(get_alter_user_sql(name=name, userpass=password))
             if default_tablespace and user.get('default_tablespace') != default_tablespace:
                 sql.append(get_alter_user_sql(
-                        name=name, default_tablespace=default_tablespace))
+                    name=name, default_tablespace=default_tablespace))
             if temporary_tablespace and user.get('temporary_tablespace') != temporary_tablespace:
                 sql.append(get_alter_user_sql(
-                        name=name, temporary_tablespace=temporary_tablespace))
+                    name=name, temporary_tablespace=temporary_tablespace))
 
     if state != 'absent':
         if roles is not None:
             priv_to_grant = list(
-                    set(roles) - set(user.get('roles') if user else list()))
+                set(roles) - set(user.get('roles') if user else list()))
             for priv in priv_to_grant:
                 sql.append(get_grant_privilege_sql(user=name, priv=priv))
             priv_to_revoke = list(
-                    set(user.get('roles') if user else list()) - set(roles))
+                set(user.get('roles') if user else list()) - set(roles))
             for priv in priv_to_revoke:
                 sql.append(get_revoke_privilege_sql(user=name, priv=priv))
 
         # System privileges
         if sys_privs is not None:
             privs_to_grant = list(
-                    set(sys_privs) - set(user.get('sys_privs') if user else list()))
+                set(sys_privs) - set(user.get('sys_privs') if user else list()))
             for priv in privs_to_grant:
                 sql.append(get_grant_privilege_sql(user=name, priv=priv))
             priv_to_revoke = list(
-                    set(user.get('sys_privs') if user else list()) - set(sys_privs))
+                set(user.get('sys_privs') if user else list()) - set(sys_privs))
             for priv in priv_to_revoke:
                 sql.append(get_revoke_privilege_sql(user=name, priv=priv))
 
@@ -301,32 +307,33 @@ def ensure(module, conn):
 
 def main():
     module = AnsibleModule(
-            argument_spec=dict(
-                    name=dict(type='str', required=True),
-                    password=dict(type='str', required=False),
-                    default_tablespace=dict(type='str', required=False),
-                    temporary_tablespace=dict(type='str', required=False),
-                    roles=dict(type='list', required=False),
-                    state=dict(type='str', default='present', choices=[
-                        'present', 'absent', 'locked', 'unlocked']),
-                    sys_privs=dict(type='list', required=False),
-                    oracle_host=dict(type='str', default='127.0.0.1'),
-                    oracle_port=dict(type='str', default='1521'),
-                    oracle_user=dict(type='str', default='SYSTEM'),
-                    oracle_mode=dict(type='str', required=None, default=None, choices=[
-                        'SYSDBA', 'SYSOPER']),
-                    oracle_pass=dict(type='str', default=None, no_log=True),
-                    oracle_sid=dict(type='str', default=None),
-                    oracle_service=dict(type='str', default=None),
-            ),
-            required_one_of=[['oracle_sid', 'oracle_service']],
-            mutually_exclusive=[['oracle_sid', 'oracle_service']],
-            supports_check_mode=True,
+        argument_spec=dict(
+            name=dict(type='str', required=True),
+            password=dict(type='str', required=False),
+            password_mismatch=dict(type='bool', default=False),
+            default_tablespace=dict(type='str', required=False),
+            temporary_tablespace=dict(type='str', required=False),
+            roles=dict(type='list', required=False),
+            state=dict(type='str', default='present', choices=[
+                'present', 'absent', 'locked', 'unlocked']),
+            sys_privs=dict(type='list', required=False),
+            oracle_host=dict(type='str', default='127.0.0.1'),
+            oracle_port=dict(type='str', default='1521'),
+            oracle_user=dict(type='str', default='SYSTEM'),
+            oracle_mode=dict(type='str', required=None, default=None, choices=[
+                'SYSDBA', 'SYSOPER']),
+            oracle_pass=dict(type='str', default=None, no_log=True),
+            oracle_sid=dict(type='str', default=None),
+            oracle_service=dict(type='str', default=None),
+        ),
+        required_one_of=[['oracle_sid', 'oracle_service']],
+        mutually_exclusive=[['oracle_sid', 'oracle_service']],
+        supports_check_mode=True,
     )
 
     if not oracleclient_found:
         module.fail_json(
-                msg='cx_Oracle not found. Needs to be installed. See http://cx-oracle.sourceforge.net/')
+            msg='cx_Oracle not found. Needs to be installed. See http://cx-oracle.sourceforge.net/')
 
     oracle_host = module.params['oracle_host']
     oracle_port = module.params['oracle_port']
