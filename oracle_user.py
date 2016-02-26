@@ -301,8 +301,8 @@ def ensure(module, conn):
             module.exit_json(changed=True, sql=sql, user=user)
         for stmt in sql:
             execute_sql(module, conn, stmt)
-        return True, get_user(module, conn, name)
-    return False, user
+        return True, get_user(module, conn, name), sql
+    return False, user, sql
 
 
 def main():
@@ -348,8 +348,8 @@ def main():
                              host=oracle_host, port=oracle_port,
                              sid=oracle_sid, service=oracle_service)
 
-    changed, user = ensure(module, conn)
-    module.exit_json(changed=changed, user=user)
+    changed, user, sql = ensure(module, conn)
+    module.exit_json(changed=changed, user=user, sql=sql)
 
 
 # import module snippets
