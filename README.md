@@ -9,6 +9,7 @@ Oracle library for Ansible
  - [System Parameters](#system-parameters)
  - [Tablespaces](#tablespaces)
  - [User](#user)
+- [Return value](#return-value)
 - [Author](#author)
 
 # Introduction
@@ -162,6 +163,63 @@ __NOTE__: Password must be the hashed value from sys.user$.password.
     oracle_pass: topsecret
     oracle_mode: SYSDBA
     oracle_sid: ORCL
+```
+# Return value
+Every module returns the object it handled as well as all SQL statements executed
+so one can use Ansible's register function for further processing. The dict attribute is named like the object itself, like user in the oracle_user module.
+
+Example for the result of a changed user
+```json
+{
+    "_ansible_no_log": false,
+    "changed": true,
+    "invocation": {
+        "module_args": {
+            "_ansible_check_mode": true,
+            "default_tablespace": "DATA",
+            "name": "PINKY",
+            "oracle_host": "db.example.com",
+            "oracle_mode": "SYSDBA",
+            "oracle_pass": "VALUE_SPECIFIED_IN_NO_LOG_PARAMETER",
+            "oracle_port": "1521",
+            "oracle_service": null,
+            "oracle_sid": "ORCL",
+            "oracle_user": "sys",
+            "password": "1234567890ABCDEF",
+            "password_mismatch": false,
+            "roles": [
+              "DBA"
+            ],
+            "state": "present",
+            "sys_privs": null,
+            "temporary_tablespace": "TEMP"
+        },
+        "module_name": "oracle_user"
+    },
+    "item": {
+        "default_tablespace": "DATA",
+        "name": "PINKY",
+        "password": "1234567890ABCDEF",
+        "roles": [
+            "DBA"
+        ],
+        "temporary_tablespace": "TEMP"
+    },
+    "sql": [
+        "GRANT DBA TO PINKY",
+    ],
+    "user": {
+        "account_status": "OPEN",
+        "default_tablespace": "DATA",
+        "name": "PINKY",
+        "password": "1234567890ABCDEF",
+        "roles": [
+            "DBA"
+        ],
+        "sys_privs": null,
+        "temporary_tablespace": "TEMP"
+    }
+}
 ```
 
 # Author
