@@ -105,7 +105,7 @@ def create_connection(module, user, password, host, port, sid=None, service=None
     try:
         if mode:
             conn = cx_Oracle.connect(
-                    user=user, password=password, dsn=dsn, mode=map_mode(mode))
+                user=user, password=password, dsn=dsn, mode=map_mode(mode))
         else:
             conn = cx_Oracle.connect(user=user, password=password, dsn=dsn)
         return conn
@@ -165,31 +165,31 @@ def ensure(module, conn):
             module.exit_json(changed=True, sql=sql, directory=dir)
         for stmt in sql:
             execute_sql(module, conn, stmt)
-        return True, get_directory(module, conn, name)
-    return False, dir
+        return True, get_directory(module, conn, name), sql
+    return False, dir, sql
 
 
 def main():
     module = AnsibleModule(
-            argument_spec=dict(
-                    name=dict(type='str', required=True),
-                    path=dict(type='str', default=None),
-                    state=dict(type='str', default='present', choices=['present', 'absent']),
-                    oracle_host=dict(type='str', default='127.0.0.1'),
-                    oracle_port=dict(type='str', default='1521'),
-                    oracle_user=dict(type='str', default='SYSTEM'),
-                    oracle_pass=dict(type='str', default=None, no_log=True),
-                    oracle_sid=dict(type='str', default=None),
-                    oracle_service=dict(type='str', default=None),
-            ),
-            required_one_of=[['oracle_sid', 'oracle_service']],
-            mutually_exclusive=[['oracle_sid', 'oracle_service']],
-            supports_check_mode=True,
+        argument_spec=dict(
+            name=dict(type='str', required=True),
+            path=dict(type='str', default=None),
+            state=dict(type='str', default='present', choices=['present', 'absent']),
+            oracle_host=dict(type='str', default='127.0.0.1'),
+            oracle_port=dict(type='str', default='1521'),
+            oracle_user=dict(type='str', default='SYSTEM'),
+            oracle_pass=dict(type='str', default=None, no_log=True),
+            oracle_sid=dict(type='str', default=None),
+            oracle_service=dict(type='str', default=None),
+        ),
+        required_one_of=[['oracle_sid', 'oracle_service']],
+        mutually_exclusive=[['oracle_sid', 'oracle_service']],
+        supports_check_mode=True,
     )
 
     if not oracleclient_found:
         module.fail_json(
-                msg='cx_Oracle not found. Needs to be installed. See http://cx-oracle.sourceforge.net/')
+            msg='cx_Oracle not found. Needs to be installed. See http://cx-oracle.sourceforge.net/')
 
     oracle_host = module.params['oracle_host']
     oracle_port = module.params['oracle_port']
@@ -203,8 +203,8 @@ def main():
                           host=oracle_host, port=oracle_port,
                           sid=oracle_sid, service=oracle_service)
 
-    changed, role = ensure(module, conn)
-    module.exit_json(changed=changed, role=role)
+    changed, directory, sql = ensure(module, conn)
+    module.exit_json(changed=changed, directory=directory, sql=sql)
 
 
 # import module snippets
