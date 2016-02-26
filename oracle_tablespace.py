@@ -295,7 +295,7 @@ def ensure(module, conn):
         for stmt in sql:
             execute_sql(module=module, con=conn, sql=stmt)
         return True, get_tablespace(module=module, conn=conn, name=name), sql
-    return False, tbs, None
+    return False, tbs, sql
 
 
 def main():
