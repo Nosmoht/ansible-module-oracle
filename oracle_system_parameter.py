@@ -110,7 +110,10 @@ def create_connection(module, user, password, host, port, sid=None, service=None
         dsn = cx_Oracle.makedsn(host=host, port=port, service_name=service)
 
     try:
-        conn = cx_Oracle.connect(user=user, password=password, dsn=dsn, mode=map_mode(mode))
+        if mode:
+            conn = cx_Oracle.connect(user=user, password=password, dsn=dsn, mode=map_mode(mode))
+        else:
+            conn = cx_Oracle.connect(user=user, password=password, dsn=dsn)
         return conn
     except cx_Oracle.DatabaseError as e:
         module.fail_json(msg='{dsn}: {err}'.format(dsn=dsn, err=str(e)))
