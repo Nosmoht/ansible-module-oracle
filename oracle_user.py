@@ -260,7 +260,8 @@ def ensure(module, conn):
                                        account_status=map_state(state)))
     else:
         if state == 'absent':
-            sql.append(get_drop_user_sql(name=name))
+            if user:
+                sql.append(get_drop_user_sql(name=name))
         else:
             if state not in map_account_state(user.get('account_status')):
                 sql.append(get_alter_user_sql(
