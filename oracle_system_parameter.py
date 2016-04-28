@@ -128,10 +128,15 @@ def execute_sql(module, conn, sql):
         module.fail_json(msg='{sql}: {err}'.format(sql=sql, err=e))
 
 
-def get_system_parameter(module, conn, name):
+def get_system_parameter(module, conn, name, scope):
+    if scope == 'spfile':
+        source = 'v$spparameter'
+    else:
+        source = 'v$system_parameter'
+
     cur = conn.cursor()
     try:
-        sql = 'select sp.name, sp.value, sp.display_value from v$system_parameter sp where sp.name = :name'
+        sql = 'select sp.name, sp.value, sp.display_value from {source} sp where sp.name = :name'.format(source=source)
         cur.prepare(sql)
         cur.execute(None, dict(name=name))
         row = cur.fetchone()
@@ -143,10 +148,11 @@ def get_system_parameter(module, conn, name):
         module.fail_json(msg='{sql}: {err}'.format(sql=sql, err=str(e)))
 
 
-def get_alter_system_sql(name, value, scope, reset=False):
-    action = 'RESET' if reset else 'SET'
-    sql = "ALTER SYSTEM {action} \"{name}\"='{value}' SCOPE={scope}".format(action=action, name=name, value=value,
-                                                                            scope=scope)
+def get_alter_system_sql(name, scope, value=None, reset=False):
+    if reset:
+        sql = "ALTER SYSTEM RESET \"{name}\" SCOPE={scope}".format(name=name, scope=scope)
+    else:
+        sql = "ALTER SYSTEM SET \"{name}\"='{value}' SCOPE={scope}".format(name=name, value=value, scope=scope)
     return sql
 
 
@@ -156,11 +162,12 @@ def ensure(module, conn):
     scope = module.params['scope']
     state = module.params['state']
 
-    data = get_system_parameter(module, conn, name)
+    data = get_system_parameter(module, conn, name, scope)
 
     sql = list()
     if data:
-        if state == 'absent' and data.get('value') != '':
+        if state == 'absent' and data.get('value', None):
+            module.fail_json(msg=dict(data=data, scope=scope))
             sql.append(get_alter_system_sql(name=name, scope=scope, reset=True))
         if value not in [data.get('value'), data.get('display_value')]:
             sql.append(get_alter_system_sql(name=name, value=value, scope=scope, reset=False))
@@ -169,7 +176,7 @@ def ensure(module, conn):
             module.exit_json(changed=True, sql=sql)
         for stmt in sql:
             execute_sql(module, conn, stmt)
-        return True, get_system_parameter(module=module, conn=conn, name=name), sql
+        return True, get_system_parameter(module=module, conn=conn, name=name, scope=scope), sql
     return False, data, sql
 
 
