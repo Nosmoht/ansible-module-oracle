@@ -24,26 +24,27 @@ options:
   password_mismatch:
     description:
     - Boolean to define if a mismatch of current and specified password is allowed.
-    - If True, the password will not be changed if it's different.
-    - If False, password will be changed if possible.
+    - If I(true), the password will not be changed if it's different.
+    - If I(false), password will be changed if possible.
     required: false
     default: false
   roles:
     description:
     - List of roles granted to the user.
-    - If an empty list ([]) is passed all roles will be revoked. If None roles will not be ensured.
+    - If an empty list I([]) is passed all roles will be revoked. If I(None) roles will not be ensured.
     - All items will be converted using uppercase.
     required: false
     default: None
   sys_privs:
     description:
     - List of system privileges granted to the user.
-    - If an empty list ([]) is passed all system privileges will be revoked. If None system privileges will not be ensured.
+    - If an empty list I([]) is passed all system privileges will be revoked. If I(None) system privileges will not be handled.
     - All items will be converted using uppercase.
     required: false
   state:
     description:
-    - Account state
+    - If I(present), I(locked) or I(unlocked) and the user does not exist it will be created.
+    - If I(absent) and the user exists it first of all will be locked, afterwards all session will be disconnected immediate and finally the user gots dropped.
     required: False
     default: present
     choices: ["present", "absent", "locked", "unlocked"]
