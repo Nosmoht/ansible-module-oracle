@@ -104,6 +104,7 @@ Provided value is compared to column __value__ AND __display_value__ of v$system
 - oracle_system_parameter:
     name: db_create_file_dest
     value: /u01/app/oracle/oradata/ORCL
+    scope: both
     state: present
     oracle_host: db.example.com
     oracle_port: 1521
