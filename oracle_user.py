@@ -14,14 +14,20 @@ options:
     description:
     - Account name
     required: true
+  default_tablespace:
+    description:
+    - Name of default tablespace
+    required: false
   password:
     description:
     - Password hash as in SYS.USER$.PASSWORD
   password_mismatch:
     description:
-    - Boolean to define if a mismatch of current with specified password is allowed.
+    - Boolean to define if a mismatch of current and specified password is allowed.
     - If True, the password will not be changed if it's different.
     - If False, password will be changed if possible.
+    required: false
+    default: false
   roles:
     description:
     - List of roles granted to the user.
@@ -34,12 +40,17 @@ options:
     - List of system privileges granted to the user.
     - If an empty list ([]) is passed all system privileges will be revoked. If None system privileges will not be ensured.
     - All items will be converted using uppercase.
+    required: false
   state:
     description:
     - Account state
     required: False
     default: present
     choices: ["present", "absent", "locked", "unlocked"]
+  temporary_tablespace:
+    description:
+    - Name of temporary tablespace
+    required: false
   oracle_host:
     description:
     - Hostname or IP address of Oracle DB
