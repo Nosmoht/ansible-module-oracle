@@ -154,6 +154,14 @@ def fetch_all(module, cur, sql, name):
     return rows
 
 
+def is_rac(module, con):
+    cur = con.cursor()
+    sql = 'select parallel from v$instance'
+    row = fetch_all(module, cur, sql, None)
+    cur.close()
+    return row[0] == 'YES'
+
+
 def get_user(module, conn, name):
     cur = conn.cursor()
     sql = 'select u.default_tablespace, u.temporary_tablespace, s.password, u.account_status from dba_users u join sys.user$ s on (s.name = u.username) where s.name = :name'
@@ -241,6 +249,30 @@ def map_account_state(account_status):
     return 'locked'
 
 
+def get_disconnect_sessions_sql(name, rac=False):
+    if rac:
+        sql = """
+        declare
+          cursor c is select sid, serial#, inst_id from gv$session where username = '{name}';
+        begin
+          for s in c loop
+            execute immediate 'alter system disconnect session ''' || s.sid || ',' || s.serial# || ',@' || s.inst_id || ''' immediate';
+          end loop;
+        end;
+        """
+    else:
+        sql = """
+        declare
+          cursor c is select sid, serial# from v$session where username = '{name}';
+        begin
+          for s in c loop
+            execute immediate 'alter system disconnect session ''' || s.sid || ',' || s.serial# || ''' immediate';
+          end loop;
+        end;
+        """
+    return sql.format(name=name)
+
+
 def ensure(module, conn):
     sql = list()
 
@@ -272,6 +304,8 @@ def ensure(module, conn):
     else:
         if state == 'absent':
             if user:
+                sql.append(get_alter_user_sql(name=name, account_status=map_state('locked')))
+                sql.append(get_disconnect_sessions_sql(name=name))
                 sql.append(get_drop_user_sql(name=name))
         else:
             if state not in map_account_state(user.get('account_status')):
