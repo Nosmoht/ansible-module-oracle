@@ -360,8 +360,11 @@ def main():
                              host=oracle_host, port=oracle_port,
                              sid=oracle_sid, service=oracle_service)
 
-    changed, user, sql = ensure(module, conn)
-    module.exit_json(changed=changed, user=user, sql=sql)
+    try:
+        changed, user, sql = ensure(module, conn)
+        module.exit_json(changed=changed, user=user, sql=sql)
+    except Exception as e:
+        module.fail_json(msg=e.message)
 
 
 # import module snippets
