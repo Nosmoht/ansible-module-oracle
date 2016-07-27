@@ -155,11 +155,16 @@ def fetch_all(module, cur, sql, name):
 
 
 def is_rac(module, con):
-    cur = con.cursor()
     sql = 'select parallel from v$instance'
-    row = fetch_all(module, cur, sql, None)
+    cur = con.cursor()
+    try:
+        cur.prepare(sql)
+        cur.execute(None)
+        row = cur.fetchone()
+    except cx_Oracle.DatabaseError as e:
+        module.fail_json(msg='{sql}: {err}'.format(sql=sql, err=str(e)))
     cur.close()
-    return row[0] == 'YES'
+    return row == 'YES'
 
 
 def get_user(module, conn, name):
@@ -305,7 +310,7 @@ def ensure(module, conn):
         if state == 'absent':
             if user:
                 sql.append(get_alter_user_sql(name=name, account_status=map_state('locked')))
-                sql.append(get_disconnect_sessions_sql(name=name))
+                sql.append(get_disconnect_sessions_sql(name=name, rac=is_rac(module=module, con=conn)))
                 sql.append(get_drop_user_sql(name=name))
         else:
             if state not in map_account_state(user.get('account_status')):
