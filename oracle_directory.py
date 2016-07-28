@@ -178,6 +178,8 @@ def main():
             oracle_host=dict(type='str', default='127.0.0.1'),
             oracle_port=dict(type='str', default='1521'),
             oracle_user=dict(type='str', default='SYSTEM'),
+            oracle_mode=dict(type='str', required=None, default=None, choices=[
+                'SYSDBA', 'SYSOPER']),
             oracle_pass=dict(type='str', default=None, no_log=True),
             oracle_sid=dict(type='str', default=None),
             oracle_service=dict(type='str', default=None),
@@ -194,17 +196,22 @@ def main():
     oracle_host = module.params['oracle_host']
     oracle_port = module.params['oracle_port']
     oracle_user = module.params['oracle_user']
+    oracle_mode = module.params['oracle_mode']
     oracle_pass = module.params['oracle_pass'] or os.environ['ORACLE_PASS']
     oracle_sid = module.params['oracle_sid']
     oracle_service = module.params['oracle_service']
 
-    conn = get_connection(module=module,
-                          user=oracle_user, password=oracle_pass,
-                          host=oracle_host, port=oracle_port,
-                          sid=oracle_sid, service=oracle_service)
+    try:
+        conn = create_connection(module=module,
+                                 user=oracle_user, password=oracle_pass,
+                                 host=oracle_host, port=oracle_port,
+                                 sid=oracle_sid, service=oracle_service,
+                                 mode=oracle_mode)
 
-    changed, directory, sql = ensure(module, conn)
-    module.exit_json(changed=changed, directory=directory, sql=sql)
+        changed, directory, sql = ensure(module, conn)
+        module.exit_json(changed=changed, directory=directory, sql=sql)
+    except Exception as e:
+        module.fail_json(msg=e.message)
 
 
 # import module snippets
