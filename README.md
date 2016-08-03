@@ -17,23 +17,31 @@ Oracle library for Ansible
 Handle Oracle stuff using Ansible with this library.
 
 Supported objects and operations:
+
 - Directory
   - create and delete
   - modify path
+
 - Roles
   - create and delete
   - grant and revoke system privileges
   - grant and revoke roles
+
 - System parameters
   - set and reset, even hidden parameters
+
 - Tablespaces
   - create and delete
   - add and modify datafiles
+
 - Users
   - create, update, delete
   - lock and unlock
   - grant and revoke roles
   - grant and revoke system privileges
+  - set default and temporary tablespace
+  - set tablespace quotas
+
 - Check mode
   All modules support Ansible's check mode. If check mode is enabled all SQL statements that would be executed are
   returned and can be checked. One can register the output of each module and check the results _sql_ variable to see
@@ -42,7 +50,7 @@ Supported objects and operations:
 # Requirements
 
 - Python [cx_Oracle] 5.2 or greater must be installed on the Ansible controller node.
-
+- The oracle_user module needs to select data from SYS.USER$. There the user that connects to the database (__oracle_user__) must have access to it.
 # Usage
 
 ## Common
@@ -152,6 +160,9 @@ __NOTE__: Password must be the hashed value from sys.user$.password.
     password: 225751978A87ED8E
     default_tablespace: DATA
     temporary_tablespace: TEMP
+    quotas:
+    - tablespace: DATA
+      quota: UNLIMITED
     roles:
     - CONNECT
     - SELECT ANY DICTIONARY
