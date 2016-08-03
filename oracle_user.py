@@ -28,6 +28,10 @@ options:
     - If I(false), password will be changed if possible.
     required: false
     default: false
+  quotas:
+    description:
+    - List of tablespace quotas.
+    required: false
   roles:
     description:
     - List of roles granted to the user.
@@ -95,12 +99,18 @@ EXAMPLES = '''
     default_tablespace: DATA
     temporary_tablespace: TEMP
     password: 975C9ABC52D157E5
+    quotas:
+    - tablespace: DATA
+      quota: UNLIMITED
     roles:
     - DBA
     sys_privs:
     - CONNECT
     - UNLIMITED TABLESPACE
 '''
+
+import re
+import traceback
 
 try:
     import cx_Oracle
@@ -189,6 +199,10 @@ def get_user(module, conn, name):
     sql = 'select privilege from dba_sys_privs where grantee = :name'
     rows = fetch_all(module, cur, sql, name)
     data['sys_privs'] = [item[0] for item in rows]
+
+    sql = 'select tablespace_name, max_bytes from dba_ts_quotas where username = :name'
+    rows = fetch_all(module, cur, sql, name)
+    data['quotas'] = [{'tablespace': item[0], 'max_bytes': item[1]} for item in rows]
 
     cur.close()
     return data
@@ -279,6 +293,53 @@ def get_disconnect_sessions_sql(name, rac=False):
     return sql.format(name=name)
 
 
+def get_alter_user_quota_sql(tablespace, username, quota):
+    return 'ALTER USER {username} QUOTA {quota} ON {tablespace}'.format(username=username, quota=quota,
+                                                                        tablespace=tablespace)
+
+
+def get_factor(unit):
+    units = ['K', 'M', 'G', 'T']
+    factor = 1024
+    for u in units:
+        if u == unit:
+            break
+        factor = factor * 1024
+    return factor
+
+
+def get_max_bytes(quota):
+    if quota is None:
+        return None
+    quota = quota.strip().upper()
+    if quota == 'UNLIMITED':
+        return -1
+    match = re.match(r"([0-9]+)([A-Z]+)", quota, re.I)
+    if match:
+        items = match.groups()
+        bytes = int(items[0])
+        unit = items[1]
+        return bytes * get_factor(unit)
+    return quota
+
+
+def get_quota_list(target, actual):
+    data = target
+    if actual is None:
+        return data
+    for i in actual:
+        quota = {'tablspace': i.get('tablespace'), 'target': i.get('quota')}
+        found = False
+        for target in data:
+            found = target['tablespace'] == i.get('tablespace')
+            if found:
+                target['actual'] = i.get('quota')
+                break
+        if not found:
+            data.append(quota)
+    return data
+
+
 def ensure(module, conn):
     sql = list()
 
@@ -287,13 +348,18 @@ def ensure(module, conn):
         'default_tablespace'] else None
     password = module.params['password']
     password_mismatch = module.params['password_mismatch']
+
+    quotas = module.params['quotas']
+
     if module.params['roles'] is not None:
         roles = [item.upper() for item in module.params['roles']]
     else:
         roles = None
     state = module.params['state']
+
     temporary_tablespace = module.params['temporary_tablespace'].upper() if module.params[
         'temporary_tablespace'] else None
+
     if module.params['sys_privs'] is not None:
         sys_privs = [item.upper() for item in module.params['sys_privs']]
     else:
@@ -301,13 +367,30 @@ def ensure(module, conn):
 
     user = get_user(module, conn, name)
 
-    if not user and state != 'absent':
-        sql.append(get_create_user_sql(name=name,
-                                       userpass=password,
-                                       default_tablespace=default_tablespace,
-                                       temporary_tablespace=temporary_tablespace,
-                                       account_status=map_state(state)))
+    # User doesn't exist
+    if not user:
+        # CREATE USER
+        if state != 'absent':
+            sql.append(get_create_user_sql(name=name,
+                                           userpass=password,
+                                           default_tablespace=default_tablespace,
+                                           temporary_tablespace=temporary_tablespace,
+                                           account_status=map_state(state)))
+            # Sys privs
+            if sys_privs is not None:
+                for sys_priv in sys_privs:
+                    sql.append(get_grant_privilege_sql(user=name, priv=sys_priv))
+            # Roles
+            if roles is not None:
+                for role in roles:
+                    sql.append(get_grant_privilege_sql(user=name, priv=role))
+            # Quotas
+            if quotas is not None:
+                for quota in quotas:
+                    sql.append(get_alter_user_quota_sql(tablespace=quota.get('tablespace'), username=name,
+                                                        quota=quota.get('quota')))
     else:
+        # DROP USER
         if state == 'absent':
             if user:
                 sql.append(get_alter_user_sql(name=name, account_status=map_state('locked')))
@@ -326,27 +409,35 @@ def ensure(module, conn):
                 sql.append(get_alter_user_sql(
                     name=name, temporary_tablespace=temporary_tablespace))
 
-    if state != 'absent':
-        if roles is not None:
-            priv_to_grant = list(
-                set(roles) - set(user.get('roles') if user else list()))
-            for priv in priv_to_grant:
-                sql.append(get_grant_privilege_sql(user=name, priv=priv))
-            priv_to_revoke = list(
-                set(user.get('roles') if user else list()) - set(roles))
-            for priv in priv_to_revoke:
-                sql.append(get_revoke_privilege_sql(user=name, priv=priv))
+            if roles is not None:
+                priv_to_grant = list(
+                    set(roles) - set(user.get('roles') if user else list()))
+                for priv in priv_to_grant:
+                    sql.append(get_grant_privilege_sql(user=name, priv=priv))
+                priv_to_revoke = list(
+                    set(user.get('roles') if user else list()) - set(roles))
+                for priv in priv_to_revoke:
+                    sql.append(get_revoke_privilege_sql(user=name, priv=priv))
 
-        # System privileges
-        if sys_privs is not None:
-            privs_to_grant = list(
-                set(sys_privs) - set(user.get('sys_privs') if user else list()))
-            for priv in privs_to_grant:
-                sql.append(get_grant_privilege_sql(user=name, priv=priv))
-            priv_to_revoke = list(
-                set(user.get('sys_privs') if user else list()) - set(sys_privs))
-            for priv in priv_to_revoke:
-                sql.append(get_revoke_privilege_sql(user=name, priv=priv))
+            # System privileges
+            if sys_privs is not None:
+                privs_to_grant = list(
+                    set(sys_privs) - set(user.get('sys_privs') if user else list()))
+                for priv in privs_to_grant:
+                    sql.append(get_grant_privilege_sql(user=name, priv=priv))
+                priv_to_revoke = list(
+                    set(user.get('sys_privs') if user else list()) - set(sys_privs))
+                for priv in priv_to_revoke:
+                    sql.append(get_revoke_privilege_sql(user=name, priv=priv))
+
+            # Quotas
+            if quotas is not None:
+                quotas_list = get_quota_list(target=quotas, actual=user.get('quotas'))
+                for quota in quotas_list:
+                    if quota.get('target') != quota.get('actual'):
+                        sql.append(
+                            get_alter_user_quota_sql(tablespace=quota.get('tablespace'), username=name,
+                                                     quota=quota.get('quota')))
 
     if len(sql) != 0:
         if module.check_mode:
@@ -365,6 +456,7 @@ def main():
             password_mismatch=dict(type='bool', default=False),
             default_tablespace=dict(type='str', required=False),
             temporary_tablespace=dict(type='str', required=False),
+            quotas=dict(type='list', required=False),
             roles=dict(type='list', required=False),
             state=dict(type='str', default='present', choices=[
                 'present', 'absent', 'locked', 'unlocked']),
@@ -404,7 +496,7 @@ def main():
         changed, user, sql = ensure(module, conn)
         module.exit_json(changed=changed, user=user, sql=sql)
     except Exception as e:
-        module.fail_json(msg=e.message)
+        module.fail_json(msg=traceback.format_exc())
 
 
 # import module snippets
