@@ -363,19 +363,18 @@ def get_max_bytes(quota):
 
 
 def get_quota_list(target, actual):
-    data = target
-    if actual is None:
-        return data
-    for i in actual:
-        quota = {'tablspace': i.get('tablespace'), 'target': i.get('quota')}
+    data = []
+    for target_quota in target:
         found = False
-        for target in data:
-            found = target['tablespace'] == i.get('tablespace')
+        quota = {}
+        quota['tablespace'] = target_quota.get('tablespace')
+        quota['target'] = target_quota.get('quota')
+        for current_quota in actual:
+            found = current_quota.get('tablespace') == target_quota.get('tablespace')
             if found:
-                target['actual'] = i.get('quota')
+                quota['actual'] = current_quota.get('quota')
                 break
-        if not found:
-            data.append(quota)
+        data.append(quota)
     return data
 
 
@@ -492,7 +491,7 @@ def ensure(module, conn):
                     if quota.get('target') != quota.get('actual'):
                         sql.append(
                             get_alter_user_quota_sql(tablespace=quota.get('tablespace'), username=name,
-                                                     quota=quota.get('quota')))
+                                                     quota=quota.get('target')))
 
         # Table privileges
         if tab_privs is not None:
