@@ -378,8 +378,31 @@ def get_quota_list(target, actual):
     return data
 
 
-def tab_privs_diff(source, target):
-    return []
+def merge_table_privs(target, merge, name):
+    for item in merge:
+        found = False
+        owner = item.get('owner')
+        table_name = item.get('table_name')
+        privileges = item.get('privileges')
+        for index, t in enumerate(target):
+            found = owner == t.get('owner') and table_name == t.get('table_name')
+            if found:
+                target[index][name] = privileges
+                break
+        if not found:
+            target.append({'owner': owner, 'table_name': table_name, name: privileges})
+    return target
+
+
+def tab_privs_diff(target, actual):
+    data = []
+    data = merge_table_privs(data, target, 'target')
+    data = merge_table_privs(data, actual, 'actual')
+
+    for index, item in enumerate(data):
+        data[index]['revoke'] = list(set(item.get('actual', [])) - set(item.get('target', [])))
+        data[index]['grant'] = list(set(item.get('target', [])) - set(item.get('actual', [])))
+    return data
 
 
 def ensure(module, conn):
@@ -411,7 +434,7 @@ def ensure(module, conn):
     if module.params['tab_privs'] is not None:
         tab_privs = []
         for priv in module.params['tab_privs']:
-            tab_privs.apppend(
+            tab_privs.append(
                 {'owner': priv.get('owner').strip().upper(),
                  'table_name': priv.get('table_name').strip().upper(),
                  'privileges': [priv.upper() for priv in priv.get('privileges')]
@@ -443,6 +466,15 @@ def ensure(module, conn):
                 for quota in quotas:
                     sql.append(get_alter_user_quota_sql(tablespace=quota.get('tablespace'), username=name,
                                                         quota=quota.get('quota')))
+            # Table privileges
+            if tab_privs is not None:
+                for tab_priv in tab_privs:
+                    for priv in tab_priv.get('grant'):
+                        sql.append(get_grant_privilege_sql(user=name,
+                                                           priv='{privilege} ON "{owner}"."{table_name}"'.format(
+                                                               privilege=priv,
+                                                               owner=tab_priv.get('owner'),
+                                                               table_name=tab_priv.get('table_name'))))
     else:
         # DROP USER
         if state == 'absent':
@@ -493,20 +525,22 @@ def ensure(module, conn):
                             get_alter_user_quota_sql(tablespace=quota.get('tablespace'), username=name,
                                                      quota=quota.get('target')))
 
-        # Table privileges
-        if tab_privs is not None:
-            privs_diff = tab_privs_diff(target=tab_privs, source=user.get('tab_privs'))
-            for diff in privs_diff:
-                for revoke in diff.get('revoke'):
-                    sql.append(get_revoke_privilege_sql(user=name,
-                                                        priv='{privilege} ON "{owner}"."{table_name}"'.format(
-                                                            privilege=revoke, owner=diff.get('owner'),
-                                                            table_name=diff.get('table_name'))))
-                for grant in diff.get('grant'):
-                    sql.append(get_grant_privilege_sql(user=name,
-                                                       priv='{privilege} ON "{owner}"."{table_name}"'.format(
-                                                           privilege=revoke, owner=diff.get('owner'),
-                                                           table_name=diff.get('table_name'))))
+            # Table privileges
+            if tab_privs is not None:
+                privs_diff = tab_privs_diff(target=tab_privs, actual=user.get('tab_privs'))
+                for diff in privs_diff:
+                    if diff.get('revoke') is not None:
+                        for revoke in diff.get('revoke'):
+                            sql.append(get_revoke_privilege_sql(user=name,
+                                                                priv='{privilege} ON "{owner}"."{table_name}"'.format(
+                                                                    privilege=revoke, owner=diff.get('owner'),
+                                                                    table_name=diff.get('table_name'))))
+                    if diff.get('grant') is not None:
+                        for grant in diff.get('grant'):
+                            sql.append(get_grant_privilege_sql(user=name,
+                                                               priv='{privilege} ON "{owner}"."{table_name}"'.format(
+                                                                   privilege=grant, owner=diff.get('owner'),
+                                                                   table_name=diff.get('table_name'))))
 
     if len(sql) != 0:
         if module.check_mode:
