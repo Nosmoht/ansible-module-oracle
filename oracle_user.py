@@ -52,6 +52,10 @@ options:
     required: False
     default: present
     choices: ["present", "absent", "locked", "unlocked"]
+  tab_privs:
+    description:
+    - List od tablespace privileges
+    required: False
   temporary_tablespace:
     description:
     - Name of temporary tablespace
@@ -107,10 +111,34 @@ EXAMPLES = '''
     sys_privs:
     - CONNECT
     - UNLIMITED TABLESPACE
-'''
+    tab_privs:
+    - owner: SYS
+      tablename: USER$
+      privileges:
+      - SELECT
+    oracle_host: oracle.example.com
+    oracle_user: SYSTEM
+    oracle_pass: manager
+    oracle_sid: ORCL
 
-import re
-import traceback
+- name: Ensure user brain is locked
+  oracle_user:
+    name: brain
+    state: locked
+    oracle_host: oracle.example.com
+    oracle_user: SYSTEM
+    oracle_pass: manager
+    oracle_sid: ORCL
+
+- name: Ensure user elvira is locked
+  oracle_user:
+    name: elvira
+    state: absent
+    oracle_host: oracle.example.com
+    oracle_user: SYSTEM
+    oracle_pass: manager
+    oracle_sid: ORCL
+'''
 
 try:
     import cx_Oracle
@@ -192,17 +220,28 @@ def get_user(module, conn, name):
     data['password'] = row[0][2]
     data['account_status'] = row[0][3]
 
+    # Roles granted
     sql = 'select granted_role from dba_role_privs where grantee = :name'
     rows = fetch_all(module, cur, sql, name)
     data['roles'] = [item[0] for item in rows]
 
+    # System privileges granted
     sql = 'select privilege from dba_sys_privs where grantee = :name'
     rows = fetch_all(module, cur, sql, name)
     data['sys_privs'] = [item[0] for item in rows]
 
+    # Tablespace quotas
     sql = 'select tablespace_name, max_bytes from dba_ts_quotas where username = :name'
     rows = fetch_all(module, cur, sql, name)
     data['quotas'] = [{'tablespace': item[0], 'max_bytes': item[1]} for item in rows]
+
+    # Table privileges granted
+    sql = 'select owner, table_name, listagg(privilege, \',\') within group (order by privilege) from dba_tab_privs where grantee = :name and type = \'TABLE\' group by owner,table_name'
+    rows = fetch_all(module, cur, sql, name)
+    tab_privs = []
+    for row in rows:
+        tab_privs.append({'owner': row[0], 'table_name': row[1], 'privileges': row[2].split(',')})
+    data['tab_privs'] = tab_privs
 
     cur.close()
     return data
@@ -324,19 +363,45 @@ def get_max_bytes(quota):
 
 
 def get_quota_list(target, actual):
-    data = target
-    if actual is None:
-        return data
-    for i in actual:
-        quota = {'tablspace': i.get('tablespace'), 'target': i.get('quota')}
+    data = []
+    for target_quota in target:
         found = False
-        for target in data:
-            found = target['tablespace'] == i.get('tablespace')
+        quota = {}
+        quota['tablespace'] = target_quota.get('tablespace')
+        quota['target'] = target_quota.get('quota')
+        for current_quota in actual:
+            found = current_quota.get('tablespace') == target_quota.get('tablespace')
             if found:
-                target['actual'] = i.get('quota')
+                quota['actual'] = current_quota.get('quota')
+                break
+        data.append(quota)
+    return data
+
+
+def merge_table_privs(target, merge, name):
+    for item in merge:
+        found = False
+        owner = item.get('owner')
+        table_name = item.get('table_name')
+        privileges = item.get('privileges')
+        for index, t in enumerate(target):
+            found = owner == t.get('owner') and table_name == t.get('table_name')
+            if found:
+                target[index][name] = privileges
                 break
         if not found:
-            data.append(quota)
+            target.append({'owner': owner, 'table_name': table_name, name: privileges})
+    return target
+
+
+def tab_privs_diff(target, actual):
+    data = []
+    data = merge_table_privs(data, target, 'target')
+    data = merge_table_privs(data, actual, 'actual')
+
+    for index, item in enumerate(data):
+        data[index]['revoke'] = list(set(item.get('actual', [])) - set(item.get('target', [])))
+        data[index]['grant'] = list(set(item.get('target', [])) - set(item.get('actual', [])))
     return data
 
 
@@ -355,6 +420,7 @@ def ensure(module, conn):
         roles = [item.upper() for item in module.params['roles']]
     else:
         roles = None
+
     state = module.params['state']
 
     temporary_tablespace = module.params['temporary_tablespace'].upper() if module.params[
@@ -364,6 +430,17 @@ def ensure(module, conn):
         sys_privs = [item.upper() for item in module.params['sys_privs']]
     else:
         sys_privs = None
+
+    if module.params['tab_privs'] is not None:
+        tab_privs = []
+        for priv in module.params['tab_privs']:
+            tab_privs.append(
+                {'owner': priv.get('owner').strip().upper(),
+                 'table_name': priv.get('table_name').strip().upper(),
+                 'privileges': [priv.upper() for priv in priv.get('privileges')]
+                 })
+    else:
+        tab_privs = None
 
     user = get_user(module, conn, name)
 
@@ -389,6 +466,15 @@ def ensure(module, conn):
                 for quota in quotas:
                     sql.append(get_alter_user_quota_sql(tablespace=quota.get('tablespace'), username=name,
                                                         quota=quota.get('quota')))
+            # Table privileges
+            if tab_privs is not None:
+                for tab_priv in tab_privs:
+                    for priv in tab_priv.get('grant'):
+                        sql.append(get_grant_privilege_sql(user=name,
+                                                           priv='{privilege} ON "{owner}"."{table_name}"'.format(
+                                                               privilege=priv,
+                                                               owner=tab_priv.get('owner'),
+                                                               table_name=tab_priv.get('table_name'))))
     else:
         # DROP USER
         if state == 'absent':
@@ -437,7 +523,24 @@ def ensure(module, conn):
                     if quota.get('target') != quota.get('actual'):
                         sql.append(
                             get_alter_user_quota_sql(tablespace=quota.get('tablespace'), username=name,
-                                                     quota=quota.get('quota')))
+                                                     quota=quota.get('target')))
+
+            # Table privileges
+            if tab_privs is not None:
+                privs_diff = tab_privs_diff(target=tab_privs, actual=user.get('tab_privs'))
+                for diff in privs_diff:
+                    if diff.get('revoke') is not None:
+                        for revoke in diff.get('revoke'):
+                            sql.append(get_revoke_privilege_sql(user=name,
+                                                                priv='{privilege} ON "{owner}"."{table_name}"'.format(
+                                                                    privilege=revoke, owner=diff.get('owner'),
+                                                                    table_name=diff.get('table_name'))))
+                    if diff.get('grant') is not None:
+                        for grant in diff.get('grant'):
+                            sql.append(get_grant_privilege_sql(user=name,
+                                                               priv='{privilege} ON "{owner}"."{table_name}"'.format(
+                                                                   privilege=grant, owner=diff.get('owner'),
+                                                                   table_name=diff.get('table_name'))))
 
     if len(sql) != 0:
         if module.check_mode:
@@ -461,6 +564,7 @@ def main():
             state=dict(type='str', default='present', choices=[
                 'present', 'absent', 'locked', 'unlocked']),
             sys_privs=dict(type='list', required=False),
+            tab_privs=dict(type='list', required=False),
             oracle_host=dict(type='str', default='127.0.0.1'),
             oracle_port=dict(type='str', default='1521'),
             oracle_user=dict(type='str', default='SYSTEM'),
