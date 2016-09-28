@@ -238,10 +238,7 @@ def get_user(module, conn, name):
     # Table privileges granted
     sql = 'select owner, table_name, listagg(privilege, \',\') within group (order by privilege) from dba_tab_privs where grantee = :name and type = \'TABLE\' group by owner,table_name'
     rows = fetch_all(module, cur, sql, name)
-    tab_privs = []
-    for row in rows:
-        tab_privs.append({'owner': row[0], 'table_name': row[1], 'privileges': row[2].split(',')})
-    data['tab_privs'] = tab_privs
+    data['tab_privs'] = [{'owner': row[0], 'table_name': row[1], 'privileges': row[2].split(',')} for row in rows]
 
     cur.close()
     return data
@@ -432,13 +429,10 @@ def ensure(module, conn):
         sys_privs = None
 
     if module.params['tab_privs'] is not None:
-        tab_privs = []
-        for priv in module.params['tab_privs']:
-            tab_privs.append(
-                {'owner': priv.get('owner').strip().upper(),
-                 'table_name': priv.get('table_name').strip().upper(),
-                 'privileges': [priv.upper() for priv in priv.get('privileges')]
-                 })
+        tab_privs = [{'owner': item.get('owner').strip().upper(),
+                      'table_name': item.get('table_name').strip().upper(),
+                      'privileges': [priv.upper() for priv in item.get('privileges')]}
+                     for item in module.params['tab_privs']]
     else:
         tab_privs = None
 
