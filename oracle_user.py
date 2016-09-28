@@ -463,7 +463,7 @@ def ensure(module, conn):
             # Table privileges
             if tab_privs is not None:
                 for tab_priv in tab_privs:
-                    for priv in tab_priv.get('grant'):
+                    for priv in tab_priv.get('privileges', []):
                         sql.append(get_grant_privilege_sql(user=name,
                                                            priv='{privilege} ON "{owner}"."{table_name}"'.format(
                                                                privilege=priv,
