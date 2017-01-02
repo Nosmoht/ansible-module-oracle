@@ -206,9 +206,9 @@ def is_rac(module, con):
     return row == 'YES'
 
 
-def get_user(module, conn, name):
+def get_user(module, conn, name, fetch_password=False):
     cur = conn.cursor()
-    sql = 'select u.default_tablespace, u.temporary_tablespace, s.password, u.account_status from dba_users u join sys.user$ s on (s.name = u.username) where s.name = :name'
+    sql = 'select default_tablespace, temporary_tablespace, account_status from dba_users where username = :name'
     row = fetch_all(module, cur, sql, name)
     if not row:
         return None
@@ -217,8 +217,14 @@ def get_user(module, conn, name):
     data['name'] = name
     data['default_tablespace'] = row[0][0]
     data['temporary_tablespace'] = row[0][1]
-    data['password'] = row[0][2]
     data['account_status'] = row[0][3]
+
+    if fetch_password:
+        sql = 'select password from sys.user$ where name = :name'
+        row = fetch_all(module, cur, sql, name)
+        data['password'] = row[0][0]
+    else:
+        data['password'] = None
 
     # Roles granted
     sql = 'select granted_role from dba_role_privs where grantee = :name'
@@ -436,7 +442,11 @@ def ensure(module, conn):
     else:
         tab_privs = None
 
-    user = get_user(module, conn, name)
+    if password:
+        fetch_password = True
+    else:
+        fetch_password = False
+    user = get_user(module=module, conn=conn, name=name, fetch_password=fetch_password)
 
     # User doesn't exist
     if not user:
