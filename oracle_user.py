@@ -217,7 +217,7 @@ def get_user(module, conn, name, fetch_password=False):
     data['name'] = name
     data['default_tablespace'] = row[0][0]
     data['temporary_tablespace'] = row[0][1]
-    data['account_status'] = row[0][3]
+    data['account_status'] = row[0][2]
 
     if fetch_password:
         sql = 'select password from sys.user$ where name = :name'
