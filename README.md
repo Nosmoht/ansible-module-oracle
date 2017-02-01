@@ -16,6 +16,9 @@ Oracle library for Ansible
 
 Handle Oracle stuff using Ansible with this library.
 
+__NOTE__: 
+I've open a PR to Ansible to integrate the modules. Please support to get the modules into Ansible: https://github.com/ansible/ansible/pull/20848
+
 Supported objects and operations:
 
 - Directory
